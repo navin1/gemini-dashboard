@@ -55,6 +55,7 @@ VITE_GOOGLE_CLIENT_ID=$(env_get "VITE_GOOGLE_CLIENT_ID")
 BIGQUERY_PROJECT_ID=$(env_get "BIGQUERY_PROJECT_ID")
 BIGQUERY_DATASET=$(env_get "BIGQUERY_DATASET")
 BIGQUERY_TABLE=$(env_get "BIGQUERY_TABLE")
+BQ_JOB_PROJECT_ID=$(env_get "BQ_JOB_PROJECT_ID")
 
 [[ -n "$GCP_PROJECT_ID" ]]   || die "GCP_PROJECT_ID is not set in .env. Run ./setup-gcp.sh first."
 [[ -n "$GCP_REGION" ]]       || die "GCP_REGION is not set in .env. Run ./setup-gcp.sh first."
@@ -85,6 +86,7 @@ SUBS+=",_VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID}"
 SUBS+=",_BIGQUERY_PROJECT_ID=${BIGQUERY_PROJECT_ID:-}"
 SUBS+=",_BIGQUERY_DATASET=${BIGQUERY_DATASET:-}"
 SUBS+=",_BIGQUERY_TABLE=${BIGQUERY_TABLE:-}"
+SUBS+=",_BQ_JOB_PROJECT_ID=${BQ_JOB_PROJECT_ID:-}"
 
 log "Submitting build to Cloud Build..."
 log "This typically takes 3-7 minutes on first run (Playwright layer is large)."

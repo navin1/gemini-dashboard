@@ -12,10 +12,11 @@ TABLE      = os.getenv("BIGQUERY_TABLE")      or "one"
 TABLE_REF  = f"`{PROJECT_ID}.{DATASET}.{TABLE}`"
 
 # Project where query jobs run — this is where BigQuery billing goes.
-# On Cloud Run, GOOGLE_CLOUD_PROJECT is auto-injected (the deployment project).
-# Locally it falls back to GCP_PROJECT_ID from .env, then to the data project.
+# Resolution order: explicit BQ_JOB_PROJECT_ID → Cloud Run auto-inject →
+# GCP_PROJECT_ID from .env → fallback to data project.
 JOB_PROJECT_ID = (
-    os.getenv("GOOGLE_CLOUD_PROJECT")
+    os.getenv("BQ_JOB_PROJECT_ID")
+    or os.getenv("GOOGLE_CLOUD_PROJECT")
     or os.getenv("GCP_PROJECT_ID")
     or PROJECT_ID
 )

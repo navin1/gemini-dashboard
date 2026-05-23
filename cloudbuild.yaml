@@ -4,9 +4,10 @@ substitutions:
   _REPO: workforce-dashboard
   _VITE_GOOGLE_CLIENT_ID: ""   # override via deploy.sh
   _SA_EMAIL: ""                # set by deploy.sh from GCP_SA_EMAIL in .env
-  _BIGQUERY_PROJECT_ID: ""     # data project — jobs run in PROJECT_ID (billed there)
+  _BIGQUERY_PROJECT_ID: ""     # data project (table refs)
   _BIGQUERY_DATASET: ""
   _BIGQUERY_TABLE: ""
+  _BQ_JOB_PROJECT_ID: ""       # billing project for BQ jobs; defaults to deployment project if blank
 
 steps:
   # 1. Build image
@@ -45,7 +46,7 @@ steps:
       - --max-instances=5
       - --timeout=300
       - --set-secrets=GEMINI_API_KEY=gemini-api-key:latest
-      - --set-env-vars=BIGQUERY_PROJECT_ID=${_BIGQUERY_PROJECT_ID},BIGQUERY_DATASET=${_BIGQUERY_DATASET},BIGQUERY_TABLE=${_BIGQUERY_TABLE},GEMINI_MODEL=gemini-2.5-flash
+      - --set-env-vars=BIGQUERY_PROJECT_ID=${_BIGQUERY_PROJECT_ID},BIGQUERY_DATASET=${_BIGQUERY_DATASET},BIGQUERY_TABLE=${_BIGQUERY_TABLE},BQ_JOB_PROJECT_ID=${_BQ_JOB_PROJECT_ID},GEMINI_MODEL=gemini-2.5-flash
       - --service-account=${_SA_EMAIL}
 
 images:
