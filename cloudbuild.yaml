@@ -2,8 +2,11 @@ substitutions:
   _REGION: us-central1
   _SERVICE: workforce-dashboard
   _REPO: workforce-dashboard
-  _VITE_GOOGLE_CLIENT_ID: ""   # override: gcloud builds submit --substitutions _VITE_GOOGLE_CLIENT_ID=<id>
+  _VITE_GOOGLE_CLIENT_ID: ""   # override via deploy.sh
   _SA_EMAIL: ""                # set by deploy.sh from GCP_SA_EMAIL in .env
+  _BIGQUERY_PROJECT_ID: ""     # data project — jobs run in PROJECT_ID (billed there)
+  _BIGQUERY_DATASET: ""
+  _BIGQUERY_TABLE: ""
 
 steps:
   # 1. Build image

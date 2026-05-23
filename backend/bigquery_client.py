@@ -5,14 +5,24 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-PROJECT_ID = os.getenv("BIGQUERY_PROJECT_ID", "mygclearning")
-DATASET = os.getenv("BIGQUERY_DATASET", "test")
-TABLE = os.getenv("BIGQUERY_TABLE", "one")
-TABLE_REF = f"`{PROJECT_ID}.{DATASET}.{TABLE}`"
+# Project where the data lives (used in table references only)
+PROJECT_ID = os.getenv("BIGQUERY_PROJECT_ID") or "mygclearning"
+DATASET    = os.getenv("BIGQUERY_DATASET")    or "test"
+TABLE      = os.getenv("BIGQUERY_TABLE")      or "one"
+TABLE_REF  = f"`{PROJECT_ID}.{DATASET}.{TABLE}`"
+
+# Project where query jobs run — this is where BigQuery billing goes.
+# On Cloud Run, GOOGLE_CLOUD_PROJECT is auto-injected (the deployment project).
+# Locally it falls back to GCP_PROJECT_ID from .env, then to the data project.
+JOB_PROJECT_ID = (
+    os.getenv("GOOGLE_CLOUD_PROJECT")
+    or os.getenv("GCP_PROJECT_ID")
+    or PROJECT_ID
+)
 
 
 def _client(token: str | None = None) -> bigquery.Client:
-    return bigquery.Client(project=PROJECT_ID, credentials=get_bq_credentials(token))
+    return bigquery.Client(project=JOB_PROJECT_ID, credentials=get_bq_credentials(token))
 
 
 def run_query(sql: str, token: str | None = None) -> list[dict]:
