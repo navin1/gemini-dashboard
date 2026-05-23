@@ -74,6 +74,10 @@ cmd_setup() {
   (cd "$FRONTEND_DIR" && npm install --silent)
   ok "Node dependencies installed"
 
+  # Runtime directories
+  mkdir -p "$PROJECT_ROOT/data"
+  ok "Runtime directories ready"
+
   log ""
   ok "Setup complete. Run './dev.sh start' to launch the app."
 }
