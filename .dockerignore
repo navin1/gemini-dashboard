@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+backend/__pycache__/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Git & IDE
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Secrets — injected via Cloud Run env / Secret Manager at runtime
+.env
+backend/.env
+frontend/.env.local
+frontend/.env.*.local
+
+# Dev & docs
+*.md
+dev.sh
+data/

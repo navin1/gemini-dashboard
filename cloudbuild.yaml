@@ -1,0 +1,50 @@
+substitutions:
+  _REGION: us-central1
+  _SERVICE: workforce-dashboard
+  _REPO: workforce-dashboard
+  _VITE_GOOGLE_CLIENT_ID: ""   # override: gcloud builds submit --substitutions _VITE_GOOGLE_CLIENT_ID=<id>
+  _SA_EMAIL: ""                # set by deploy.sh from GCP_SA_EMAIL in .env
+
+steps:
+  # 1. Build image
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - VITE_GOOGLE_CLIENT_ID=${_VITE_GOOGLE_CLIENT_ID}
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${COMMIT_SHA}
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:latest
+      - .
+
+  # 2. Push to Artifact Registry
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}
+
+  # 3. Deploy to Cloud Run
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${COMMIT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --memory=2Gi
+      - --cpu=2
+      - --min-instances=0
+      - --max-instances=5
+      - --timeout=300
+      - --set-secrets=GEMINI_API_KEY=gemini-api-key:latest
+      - --set-env-vars=BIGQUERY_PROJECT_ID=${_BIGQUERY_PROJECT_ID},BIGQUERY_DATASET=${_BIGQUERY_DATASET},BIGQUERY_TABLE=${_BIGQUERY_TABLE},GEMINI_MODEL=gemini-2.5-flash
+      - --service-account=${_SA_EMAIL}
+
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${COMMIT_SHA}
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:latest
