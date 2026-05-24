@@ -11,14 +11,24 @@ function nextId() { return `w_${++_id}_${Date.now()}` }
 
 const DEFAULT_LAYOUT: GridLayout = { i: '', x: 0, y: 0, w: 6, h: 10 }
 
+function storageKey(tabId: string) { return `gd_ws_${tabId}` }
+
+function loadState(tabId: string): { widgets: Widget[]; customKpis: CustomKpi[] } {
+  try {
+    const raw = localStorage.getItem(storageKey(tabId))
+    return raw ? JSON.parse(raw) : { widgets: [], customKpis: [] }
+  } catch { return { widgets: [], customKpis: [] } }
+}
+
 interface Props {
+  tabId?: string
   tabLabel?: string
   onRegisterAddWidget?: (fn: (widget: Widget) => void) => void
 }
 
-export function AIDashboardTab({ tabLabel, onRegisterAddWidget }: Props) {
-  const [widgets,    setWidgets]    = useState<Widget[]>([])
-  const [customKpis, setCustomKpis] = useState<CustomKpi[]>([])
+export function AIDashboardTab({ tabId = 'ai', tabLabel, onRegisterAddWidget }: Props) {
+  const [widgets,    setWidgets]    = useState<Widget[]>(() => loadState(tabId).widgets)
+  const [customKpis, setCustomKpis] = useState<CustomKpi[]>(() => loadState(tabId).customKpis)
   const [exporting,  setExporting]  = useState(false)
 
   const addWidget = useCallback((widget: Widget) => {
@@ -50,6 +60,11 @@ export function AIDashboardTab({ tabLabel, onRegisterAddWidget }: Props) {
   }, [])
 
   useEffect(() => { onRegisterAddWidget?.(addWidget) }, [onRegisterAddWidget, addWidget])
+
+  useEffect(() => {
+    try { localStorage.setItem(storageKey(tabId), JSON.stringify({ widgets, customKpis })) }
+    catch { /* quota exceeded */ }
+  }, [tabId, widgets, customKpis])
 
   const removeWidget    = useCallback((id: string) => setWidgets((prev)    => prev.filter((w) => w.id !== id)), [])
   const removeCustomKpi = useCallback((id: string) => setCustomKpis((prev) => prev.filter((k) => k.id !== id)), [])

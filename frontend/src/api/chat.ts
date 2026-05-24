@@ -17,6 +17,7 @@ export interface ChatWidgetDef {
   secondary_y?: string
   ai_description: string
   data: Record<string, unknown>[]
+  error?: string
 }
 
 export interface ChatResponse {
@@ -35,10 +36,30 @@ export async function sendChatMessage(
 }
 
 export async function runSqlQuery(sql: string): Promise<ChatResponse> {
-  const { data } = await client.post<ChatWidgetDef>('/query/sql', { sql })
-  return {
-    text: `Executed SQL — ${data.data?.length ?? 0} row(s) returned.`,
-    intent: 'sql',
-    widget: data,
+  try {
+    const { data } = await client.post<ChatWidgetDef>('/query/sql', { sql })
+    return {
+      text: `Executed SQL — ${data.data?.length ?? 0} row(s) returned.`,
+      intent: 'sql',
+      widget: data,
+    }
+  } catch (err: unknown) {
+    const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? ''
+    const msg = detail || (err instanceof Error ? err.message : 'SQL execution failed')
+    return {
+      text: msg,
+      intent: 'sql',
+      widget: {
+        sql,
+        error: msg,
+        chart_type: 'table',
+        title: 'SQL Error',
+        y_axis: [],
+        stacked: false,
+        dual_axis: false,
+        ai_description: '',
+        data: [],
+      },
+    }
   }
 }

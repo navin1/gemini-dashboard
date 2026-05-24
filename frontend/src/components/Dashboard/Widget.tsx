@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Star, ChevronDown, ChevronUp, Maximize2, Code2, Sparkles, Loader2, Pencil, CornerUpRight, CopyPlus } from 'lucide-react'
+import { X, Star, ChevronDown, ChevronUp, Maximize2, Code2, Sparkles, Loader2, Pencil, CornerUpRight, CopyPlus, AlertCircle } from 'lucide-react'
 import { ChartRenderer } from '../Charts/ChartRenderer'
 import { DataTable } from '../DataTable/DataTable'
 import { refineWidget } from '../../api/query'
@@ -137,7 +137,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
     setRefineError(null)
     try {
       const result = await refineWidget(widget.sql, nlInput.trim())
-      onUpdate?.({ ...widget, ...result, id: widget.id, layout: widget.layout, prevH: widget.prevH })
+      onUpdate?.({ ...widget, ...result, id: widget.id, layout: widget.layout, prevH: widget.prevH, error: result.error ?? undefined })
       setNlInput('')
       setShowSql(false)
     } catch (e) {
@@ -302,30 +302,44 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
       {/* Body — hidden when collapsed (widget physically shrinks via layout h change) */}
       {!isCollapsed && (
         <>
-          {widget.ai_description && (
-            <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex-shrink-0">
-              <p className="text-[11px] text-slate-500 leading-relaxed">{widget.ai_description}</p>
+          {widget.error ? (
+            <div className="flex-1 flex flex-col min-h-0 overflow-auto">
+              <div className="m-3 flex items-start gap-2.5 px-3 py-2.5 bg-red-50 border border-red-200 rounded-lg">
+                <AlertCircle size={14} className="text-red-500 mt-0.5 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">SQL Error</p>
+                  <p className="text-[11px] text-red-600 mt-1 font-mono break-all leading-relaxed whitespace-pre-wrap">{widget.error}</p>
+                </div>
+              </div>
             </div>
-          )}
-
-          {!showSql && (
-            <div className="flex-1 overflow-auto p-3 min-h-0">
-              {showData ? (
-                <DataTable data={widget.data} />
-              ) : (
-                <ChartRenderer
-                  chart_type={widget.chart_type}
-                  data={widget.data}
-                  x_axis={widget.x_axis}
-                  y_axis={widget.y_axis}
-                  color_field={widget.color_field}
-                  stacked={widget.stacked}
-                  dual_axis={widget.dual_axis}
-                  secondary_y={widget.secondary_y}
-                  height={220}
-                />
+          ) : (
+            <>
+              {widget.ai_description && (
+                <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex-shrink-0">
+                  <p className="text-[11px] text-slate-500 leading-relaxed">{widget.ai_description}</p>
+                </div>
               )}
-            </div>
+
+              {!showSql && (
+                <div className="flex-1 overflow-auto p-3 min-h-0">
+                  {showData ? (
+                    <DataTable data={widget.data} />
+                  ) : (
+                    <ChartRenderer
+                      chart_type={widget.chart_type}
+                      data={widget.data}
+                      x_axis={widget.x_axis}
+                      y_axis={widget.y_axis}
+                      color_field={widget.color_field}
+                      stacked={widget.stacked}
+                      dual_axis={widget.dual_axis}
+                      secondary_y={widget.secondary_y}
+                      height={220}
+                    />
+                  )}
+                </div>
+              )}
+            </>
           )}
 
           {/* SQL panel */}

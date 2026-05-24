@@ -72,6 +72,7 @@ class QueryResponse(BaseModel):
     secondary_y: Optional[str] = None
     ai_description: str
     data: list[dict[str, Any]] = []
+    error: Optional[str] = None
 
 
 class DashboardLayoutSave(BaseModel):

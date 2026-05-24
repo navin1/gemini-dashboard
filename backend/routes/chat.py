@@ -64,16 +64,12 @@ async def chat(
             data = bigquery_client.run_query(widget["sql"], token)
             widget["data"] = data
         except Exception as e:
-            # Degrade gracefully: return text explanation, no chart
-            return ChatResponse(
-                text=result.get("text", "") + f"\n\n⚠️ Could not run the query: {e}",
-                intent="explain",
-                widget=None,
-            )
+            widget["data"] = []
+            widget["error"] = str(e)
 
     return ChatResponse(
         text=result.get("text", ""),
         intent=result.get("intent", "explain"),
-        widget=widget if widget and widget.get("data") else None,
+        widget=widget if widget and (widget.get("data") or widget.get("error")) else None,
         suggested_questions=result.get("suggested_questions", []),
     )

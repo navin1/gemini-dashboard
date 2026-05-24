@@ -11,6 +11,21 @@ import type { Widget, GridLayout, KPIData, ScorecardFTE, CustomKpi } from '../ty
 
 
 const SEED_IDS = ['fte_spend_class', 'fte_capital_combo', 'fte_expense_combo', 'fte_table', 'fte_donut', 'fte_cap_exp_ftp']
+const STORAGE_KEY = 'gd_ws_fte'
+
+function loadState(): { widgets: Widget[]; customKpis: CustomKpi[] } {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    return raw ? JSON.parse(raw) : { widgets: [], customKpis: [] }
+  } catch { return { widgets: [], customKpis: [] } }
+}
+
+function saveState(widgets: Widget[], customKpis: CustomKpi[]) {
+  try {
+    const toSave = widgets.map(w => SEED_IDS.includes(w.id) ? { ...w, data: [] } : w)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ widgets: toSave, customKpis }))
+  } catch { /* quota exceeded */ }
+}
 
 function sql(data: ScorecardFTE, key: string, suffix = '') {
   const q = data._sql?.[key] ?? ''
@@ -82,16 +97,23 @@ export function FTEHierarchyTab({ tabLabel, onRegisterAddWidget }: Props) {
     staleTime: 5 * 60 * 1000,
   })
 
-  const [widgets, setWidgets] = useState<Widget[]>([])
-  const [customKpis, setCustomKpis] = useState<CustomKpi[]>([])
+  const [widgets, setWidgets] = useState<Widget[]>(() => loadState().widgets)
+  const [customKpis, setCustomKpis] = useState<CustomKpi[]>(() => loadState().customKpis)
   const [exporting, setExporting] = useState(false)
+
+  useEffect(() => { saveState(widgets, customKpis) }, [widgets, customKpis])
 
   useEffect(() => {
     if (!data) return
     const seeds = makeSeeds(data)
     setWidgets((prev) => {
+      const prevMap = new Map(prev.map(w => [w.id, w]))
+      const mergedSeeds = seeds.map(s => {
+        const p = prevMap.get(s.id)
+        return p ? { ...s, layout: p.layout ?? s.layout } : s
+      })
       const userAdded = prev.filter((w) => !SEED_IDS.includes(w.id))
-      return [...seeds, ...userAdded]
+      return [...mergedSeeds, ...userAdded]
     })
   }, [data])
 
@@ -139,7 +161,7 @@ export function FTEHierarchyTab({ tabLabel, onRegisterAddWidget }: Props) {
 
   const kpi = data?.kpi?.[0] as KPIData | undefined
 
-  if (isLoading) return <LoadingOverlay label="Loading FTE Hierarchy Scorecard…" />
+  if (isLoading && !widgets.length) return <LoadingOverlay label="Loading FTE Hierarchy Scorecard…" />
   if (isError) return (
     <div className="p-8 text-center">
       <p className="text-red-600 font-medium mb-3">Failed to load scorecard data</p>

@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState, Component } from 'react'
+import type { ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import GridLayout, { WidthProvider, Layout } from 'react-grid-layout'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, AlertCircle } from 'lucide-react'
 import { Widget as WidgetComp } from './Widget'
 import { listFavorites, createFavorite, deleteFavorite } from '../../api/favorites'
 import type { Widget, GridLayout as GridPos, Favorite } from '../../types'
@@ -9,6 +10,28 @@ import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 
 const ResponsiveGrid = WidthProvider(GridLayout)
+
+class WidgetErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props)
+    this.state = { error: null }
+  }
+  static getDerivedStateFromError(error: Error) { return { error } }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="h-full flex flex-col items-start gap-2 bg-white border border-red-100 rounded-xl shadow-sm p-4">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={14} className="text-red-500 flex-shrink-0" />
+            <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">Render Error</p>
+          </div>
+          <p className="text-[11px] text-red-600 font-mono break-all leading-relaxed">{this.state.error.message}</p>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 interface Props {
   widgets: Widget[]
@@ -134,14 +157,16 @@ export function DashboardGrid({ widgets, onRemove, onLayoutChange, onUpdate }: P
     >
       {widgets.map((w) => (
         <div key={w.id}>
-          <WidgetComp
-            widget={w}
-            onRemove={onRemove}
-            isFavorited={!!(w.sql && favBySql.has(w.sql))}
-            isFavoritePending={pendingIds.has(w.id)}
-            onFavoriteToggle={() => toggleFavorite(w)}
-            onUpdate={onUpdate}
-          />
+          <WidgetErrorBoundary>
+            <WidgetComp
+              widget={w}
+              onRemove={onRemove}
+              isFavorited={!!(w.sql && favBySql.has(w.sql))}
+              isFavoritePending={pendingIds.has(w.id)}
+              onFavoriteToggle={() => toggleFavorite(w)}
+              onUpdate={onUpdate}
+            />
+          </WidgetErrorBoundary>
         </div>
       ))}
     </ResponsiveGrid>

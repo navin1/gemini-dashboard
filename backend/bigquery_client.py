@@ -9,7 +9,35 @@ load_dotenv()
 PROJECT_ID = os.getenv("BIGQUERY_PROJECT_ID") or "mygclearning"
 DATASET    = os.getenv("BIGQUERY_DATASET")    or "test"
 TABLE      = os.getenv("BIGQUERY_TABLE")      or "one"
-TABLE_REF  = f"`{PROJECT_ID}.{DATASET}.{TABLE}`"
+
+def _parse_table_refs() -> list[str]:
+    """Parse BIGQUERY_TABLES (comma-separated project.dataset.table) or fall back to legacy vars."""
+    raw = (os.getenv("BIGQUERY_TABLES") or "").strip()
+    if raw:
+        return [t.strip().strip("`") for t in raw.split(",") if t.strip()]
+    return [f"{PROJECT_ID}.{DATASET}.{TABLE}"]
+
+TABLE_REFS: list[str] = _parse_table_refs()
+TABLE_REF = f"`{TABLE_REFS[0]}`"  # primary table (backtick-quoted) used by scorecard queries
+
+
+def build_schema_context(token: str | None = None) -> str:
+    """Fetch live column schemas for all configured tables from BigQuery."""
+    client = _client(token)
+    sections = []
+    for ref in TABLE_REFS:
+        try:
+            tbl = client.get_table(ref)
+            lines = []
+            for field in tbl.schema:
+                desc = f"  -- {field.description}" if field.description else ""
+                mode = " REPEATED" if field.mode == "REPEATED" else ""
+                lines.append(f"  {field.name} {field.field_type}{mode}{desc}")
+            body = "\n".join(lines) if lines else "  (no columns retrieved)"
+            sections.append(f"BigQuery table: `{ref}`\n{body}")
+        except Exception as exc:
+            sections.append(f"BigQuery table: `{ref}`\n  (schema unavailable: {exc})")
+    return "\n\n".join(sections)
 
 # Project where query jobs run — this is where BigQuery billing goes.
 # Resolution order: explicit BQ_JOB_PROJECT_ID → Cloud Run auto-inject →

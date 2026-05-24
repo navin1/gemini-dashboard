@@ -92,7 +92,7 @@ function TabContent({ tabId, tabLabel, registerCb }: { tabId: string; tabLabel: 
     case 'favorites': return <FavoritesTab />
     case 'glossary':  return <GlossaryTab />
     default:
-      return <AIDashboardTab key={tabId} tabLabel={tabLabel} onRegisterAddWidget={registerCb} />
+      return <AIDashboardTab key={tabId} tabId={tabId} tabLabel={tabLabel} onRegisterAddWidget={registerCb} />
   }
 }
 
@@ -252,6 +252,7 @@ export default function App() {
       ai_description: chatWidget.ai_description,
       sql: chatWidget.sql,
       data: chatWidget.data,
+      error: chatWidget.error,
     }
     const cb = _addWidgetCallbacks[activeTabId]
     if (cb) {

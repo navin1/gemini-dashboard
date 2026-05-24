@@ -252,42 +252,52 @@ export function ChatPanel({ onAddWidget }: Props) {
                   )}
                 </div>
 
-                {msg.widget && msg.widget.data?.length > 0 && (
-                  <div className="w-full bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                    <div className="flex items-center justify-between px-3 py-2 bg-brand-50 border-b border-brand-100">
+                {msg.widget && (msg.widget.data?.length > 0 || msg.widget.error) && (
+                  <div className={`w-full bg-white border rounded-xl overflow-hidden shadow-sm ${msg.widget.error ? 'border-red-200' : 'border-gray-200'}`}>
+                    <div className={`flex items-center justify-between px-3 py-2 border-b ${msg.widget.error ? 'bg-red-50 border-red-100' : 'bg-brand-50 border-brand-100'}`}>
                       <span className="text-xs font-semibold text-slate-700 truncate">{msg.widget.title}</span>
                       <div className="flex items-center gap-1 flex-shrink-0">
-                        <span className="text-[10px] bg-brand-100 text-brand-700 px-1.5 py-0.5 rounded">
-                          {msg.widget.chart_type.replace('_', ' ')}
-                        </span>
+                        {!msg.widget.error && (
+                          <span className="text-[10px] bg-brand-100 text-brand-700 px-1.5 py-0.5 rounded">
+                            {msg.widget.chart_type.replace('_', ' ')}
+                          </span>
+                        )}
                         {onAddWidget && (
                           <button
                             onClick={() => onAddWidget(msg.widget!)}
-                            className="flex items-center gap-1 text-[10px] bg-brand-600 text-white px-2 py-0.5 rounded hover:bg-brand-700 ml-1"
+                            className={`flex items-center gap-1 text-[10px] text-white px-2 py-0.5 rounded ml-1 ${msg.widget.error ? 'bg-red-500 hover:bg-red-600' : 'bg-brand-600 hover:bg-brand-700'}`}
                           >
                             <Plus size={10} /> Add to tab
                           </button>
                         )}
                       </div>
                     </div>
-                    {msg.widget.ai_description && (
-                      <p className="text-[10px] text-brand-700 bg-brand-50 px-3 py-1.5 border-b border-brand-100">
-                        {msg.widget.ai_description}
-                      </p>
+                    {msg.widget.error ? (
+                      <div className="px-3 py-2.5 flex items-start gap-2">
+                        <span className="text-[11px] text-red-600 font-mono break-all leading-relaxed whitespace-pre-wrap">{msg.widget.error}</span>
+                      </div>
+                    ) : (
+                      <>
+                        {msg.widget.ai_description && (
+                          <p className="text-[10px] text-brand-700 bg-brand-50 px-3 py-1.5 border-b border-brand-100">
+                            {msg.widget.ai_description}
+                          </p>
+                        )}
+                        <div className="p-2">
+                          <ChartRenderer
+                            chart_type={msg.widget.chart_type as ChartType}
+                            data={msg.widget.data}
+                            x_axis={msg.widget.x_axis}
+                            y_axis={msg.widget.y_axis}
+                            color_field={msg.widget.color_field}
+                            stacked={msg.widget.stacked}
+                            dual_axis={msg.widget.dual_axis}
+                            secondary_y={msg.widget.secondary_y}
+                            height={180}
+                          />
+                        </div>
+                      </>
                     )}
-                    <div className="p-2">
-                      <ChartRenderer
-                        chart_type={msg.widget.chart_type as ChartType}
-                        data={msg.widget.data}
-                        x_axis={msg.widget.x_axis}
-                        y_axis={msg.widget.y_axis}
-                        color_field={msg.widget.color_field}
-                        stacked={msg.widget.stacked}
-                        dual_axis={msg.widget.dual_axis}
-                        secondary_y={msg.widget.secondary_y}
-                        height={180}
-                      />
-                    </div>
                   </div>
                 )}
 

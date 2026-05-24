@@ -65,10 +65,12 @@ async def run_nl_query(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini error: {str(e)}")
 
+    bq_error: str | None = None
+    data: list[dict] = []
     try:
         data = bigquery_client.run_query(widget_def["sql"], token)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"BigQuery error: {str(e)}")
+        bq_error = str(e)
 
     return QueryResponse(
         sql=widget_def.get("sql", ""),
@@ -82,6 +84,7 @@ async def run_nl_query(
         secondary_y=widget_def.get("secondary_y"),
         ai_description=widget_def.get("ai_description", ""),
         data=data,
+        error=bq_error,
     )
 
 
@@ -102,10 +105,12 @@ async def refine_query(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini error: {str(e)}")
 
+    bq_error: str | None = None
+    data: list[dict] = []
     try:
         data = bigquery_client.run_query(widget_def["sql"], token)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"BigQuery error: {str(e)}")
+        bq_error = str(e)
 
     return QueryResponse(
         sql=widget_def.get("sql", ""),
@@ -119,4 +124,5 @@ async def refine_query(
         secondary_y=widget_def.get("secondary_y"),
         ai_description=widget_def.get("ai_description", ""),
         data=data,
+        error=bq_error,
     )

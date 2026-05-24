@@ -12,6 +12,7 @@ export interface Widget {
   sql: string
   data: Record<string, unknown>[]
   nl_query?: string
+  error?: string          // set when the widget encountered a SQL or render error
   prevH?: number          // stored when widget is collapsed so height can be restored
   homeTabId?: string      // set when widget is moved away from its origin tab
   // react-grid-layout position
@@ -71,6 +72,7 @@ export interface QueryResponse {
   secondary_y?: string
   ai_description: string
   data: Record<string, unknown>[]
+  error?: string
 }
 
 export interface CustomKpi {
