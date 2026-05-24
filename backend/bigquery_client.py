@@ -5,11 +5,24 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Project where the data lives (used in table references only)
+# Legacy single-table vars — kept for backward compat and scorecard query defaults
 PROJECT_ID = os.getenv("BIGQUERY_PROJECT_ID") or "mygclearning"
 DATASET    = os.getenv("BIGQUERY_DATASET")    or "test"
 TABLE      = os.getenv("BIGQUERY_TABLE")      or "one"
-TABLE_REF  = f"`{PROJECT_ID}.{DATASET}.{TABLE}`"
+
+def _parse_table_refs() -> list[str]:
+    """Parse BIGQUERY_TABLES (comma-separated project.dataset.table).
+    Falls back to the legacy individual vars when not set."""
+    raw = (os.getenv("BIGQUERY_TABLES") or "").strip()
+    if raw:
+        return [t.strip().strip("`") for t in raw.split(",") if t.strip()]
+    return [f"{PROJECT_ID}.{DATASET}.{TABLE}"]
+
+# All configured tables (bare refs, no backticks)
+TABLE_REFS: list[str] = _parse_table_refs()
+
+# Primary table — used by all pre-built scorecard queries (backtick-quoted for SQL)
+TABLE_REF = f"`{TABLE_REFS[0]}`"
 
 # Project where query jobs run — this is where BigQuery billing goes.
 # Resolution order: explicit BQ_JOB_PROJECT_ID → Cloud Run auto-inject →
@@ -24,6 +37,26 @@ JOB_PROJECT_ID = (
 
 def _client(token: str | None = None) -> bigquery.Client:
     return bigquery.Client(project=JOB_PROJECT_ID, credentials=get_bq_credentials(token))
+
+
+def build_schema_context(token: str | None = None) -> str:
+    """Fetch BigQuery schemas for all configured tables and return a prompt-ready string.
+    Uses application-level credentials (env token or ADC) — no per-user token needed."""
+    client = _client(token)
+    sections = []
+    for ref in TABLE_REFS:
+        try:
+            tbl = client.get_table(ref)
+            lines = []
+            for field in tbl.schema:
+                desc = f"  -- {field.description}" if field.description else ""
+                mode = " REPEATED" if field.mode == "REPEATED" else ""
+                lines.append(f"  {field.name} {field.field_type}{mode}{desc}")
+            body = "\n".join(lines) if lines else "  (no columns retrieved)"
+            sections.append(f"Table `{ref}`\n{body}")
+        except Exception as exc:
+            sections.append(f"Table `{ref}`\n  (schema unavailable: {exc})")
+    return "\n\n".join(sections)
 
 
 def run_query(sql: str, token: str | None = None) -> list[dict]:
