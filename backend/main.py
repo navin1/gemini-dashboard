@@ -11,7 +11,7 @@ load_dotenv()
 from database import engine, Base
 import models  # noqa: F401 — registers SQLAlchemy models
 from seed_data import seed
-from routes import query, favorites, glossary, scorecard, pdf, chat
+from routes import query, favorites, glossary, scorecard, pdf, chat, stream
 
 Base.metadata.create_all(bind=engine)
 seed()
@@ -37,6 +37,7 @@ app.include_router(glossary.router)
 app.include_router(scorecard.router)
 app.include_router(pdf.router)
 app.include_router(chat.router)
+app.include_router(stream.router)
 
 
 @app.get("/api/health")
@@ -47,6 +48,7 @@ async def health():
         "gemini": gemini_ok,
         "model": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
         "bigquery_project": os.getenv("BIGQUERY_PROJECT_ID", ""),
+        "live_refresh_interval": stream.POLL_INTERVAL,
     }
 
 

@@ -8,6 +8,7 @@ substitutions:
   _BIGQUERY_DATASET: ""
   _BIGQUERY_TABLE: ""
   _BQ_JOB_PROJECT_ID: ""       # billing project for BQ jobs; defaults to deployment project if blank
+  _LIVE_REFRESH_INTERVAL: "60" # SSE poll interval in seconds (min 10)
 
 steps:
   # 1. Build image
@@ -46,7 +47,7 @@ steps:
       - --max-instances=5
       - --timeout=300
       - --set-secrets=GEMINI_API_KEY=gemini-api-key:latest
-      - --set-env-vars=BIGQUERY_PROJECT_ID=${_BIGQUERY_PROJECT_ID},BIGQUERY_DATASET=${_BIGQUERY_DATASET},BIGQUERY_TABLE=${_BIGQUERY_TABLE},BQ_JOB_PROJECT_ID=${_BQ_JOB_PROJECT_ID},GEMINI_MODEL=gemini-2.5-flash
+      - --set-env-vars=BIGQUERY_PROJECT_ID=${_BIGQUERY_PROJECT_ID},BIGQUERY_DATASET=${_BIGQUERY_DATASET},BIGQUERY_TABLE=${_BIGQUERY_TABLE},BQ_JOB_PROJECT_ID=${_BQ_JOB_PROJECT_ID},GEMINI_MODEL=gemini-2.5-flash,LIVE_REFRESH_INTERVAL=${_LIVE_REFRESH_INTERVAL}
       - --service-account=${_SA_EMAIL}
 
 images:
