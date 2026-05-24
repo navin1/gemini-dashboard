@@ -1,13 +1,16 @@
-import { useCallback, useMemo, useRef, useState, Component } from 'react'
+import { useCallback, useMemo, useRef, useState, useEffect, Component } from 'react'
 import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import GridLayout, { WidthProvider, Layout } from 'react-grid-layout'
-import { Sparkles, AlertCircle } from 'lucide-react'
+import { Sparkles, AlertCircle, RotateCcw } from 'lucide-react'
 import { Widget as WidgetComp } from './Widget'
 import { listFavorites, createFavorite, deleteFavorite } from '../../api/favorites'
 import type { Widget, GridLayout as GridPos, Favorite } from '../../types'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
+
+const UNDO_DELAY = 5000
 
 const ResponsiveGrid = WidthProvider(GridLayout)
 
@@ -54,8 +57,44 @@ function toLayouts(widgets: Widget[]): Layout[] {
 }
 
 export function DashboardGrid({ widgets, onRemove, onLayoutChange, onUpdate }: Props) {
-  const layouts = toLayouts(widgets)
   const queryClient = useQueryClient()
+
+  // ── Undo-removal buffer ───────────────────────────────────────────────────
+  const [pendingRemoval, setPendingRemoval] = useState<Widget | null>(null)
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function clearPendingTimer() {
+    if (undoTimerRef.current) { clearTimeout(undoTimerRef.current); undoTimerRef.current = null }
+  }
+
+  const finalize = useCallback((id: string) => {
+    onRemove(id)
+    setPendingRemoval(null)
+    undoTimerRef.current = null
+  }, [onRemove])
+
+  const handleRemove = useCallback((id: string) => {
+    const widget = widgets.find(w => w.id === id)
+    if (!widget) return
+    // Finalize any previous pending removal before starting a new one
+    if (pendingRemoval) { clearPendingTimer(); onRemove(pendingRemoval.id) }
+    setPendingRemoval(widget)
+    undoTimerRef.current = setTimeout(() => finalize(id), UNDO_DELAY)
+  }, [widgets, pendingRemoval, onRemove, finalize])
+
+  function handleUndo() {
+    clearPendingTimer()
+    setPendingRemoval(null)
+  }
+
+  // Clean up timer on unmount
+  useEffect(() => () => clearPendingTimer(), [])
+
+  const visibleWidgets = pendingRemoval
+    ? widgets.filter(w => w.id !== pendingRemoval.id)
+    : widgets
+
+  const layouts = toLayouts(visibleWidgets)
 
   // Track in-flight widget IDs to block duplicate clicks and show spinner
   const inFlight = useRef<Set<string>>(new Set())
@@ -130,7 +169,7 @@ export function DashboardGrid({ widgets, onRemove, onLayoutChange, onUpdate }: P
     [onLayoutChange]
   )
 
-  if (!widgets.length) {
+  if (!visibleWidgets.length && !pendingRemoval) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-gray-400 gap-4">
         <div className="h-14 w-14 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center">
@@ -145,30 +184,50 @@ export function DashboardGrid({ widgets, onRemove, onLayoutChange, onUpdate }: P
   }
 
   return (
-    <ResponsiveGrid
-      className="layout"
-      layout={layouts}
-      cols={12}
-      rowHeight={48}
-      onLayoutChange={handleLayoutChange}
-      draggableHandle=".drag-handle"
-      resizeHandles={['se', 's', 'e']}
-      margin={[14, 14]}
-    >
-      {widgets.map((w) => (
-        <div key={w.id}>
-          <WidgetErrorBoundary>
-            <WidgetComp
-              widget={w}
-              onRemove={onRemove}
-              isFavorited={!!(w.sql && favBySql.has(w.sql))}
-              isFavoritePending={pendingIds.has(w.id)}
-              onFavoriteToggle={() => toggleFavorite(w)}
-              onUpdate={onUpdate}
-            />
-          </WidgetErrorBoundary>
-        </div>
-      ))}
-    </ResponsiveGrid>
+    <>
+      {visibleWidgets.length > 0 && (
+        <ResponsiveGrid
+          className="layout"
+          layout={layouts}
+          cols={12}
+          rowHeight={48}
+          onLayoutChange={handleLayoutChange}
+          draggableHandle=".drag-handle"
+          resizeHandles={['se', 's', 'e']}
+          margin={[14, 14]}
+        >
+          {visibleWidgets.map((w) => (
+            <div key={w.id}>
+              <WidgetErrorBoundary>
+                <WidgetComp
+                  widget={w}
+                  onRemove={handleRemove}
+                  isFavorited={!!(w.sql && favBySql.has(w.sql))}
+                  isFavoritePending={pendingIds.has(w.id)}
+                  onFavoriteToggle={() => toggleFavorite(w)}
+                  onUpdate={onUpdate}
+                />
+              </WidgetErrorBoundary>
+            </div>
+          ))}
+        </ResponsiveGrid>
+      )}
+
+      {pendingRemoval && createPortal(
+        <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-3 bg-gray-900 text-white text-sm px-4 py-2.5 rounded-xl shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <span className="truncate max-w-[200px] text-gray-300">
+            <span className="text-white font-medium">"{pendingRemoval.title}"</span> removed
+          </span>
+          <button
+            onClick={handleUndo}
+            className="flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 font-semibold transition-colors flex-shrink-0"
+          >
+            <RotateCcw size={13} />
+            Undo
+          </button>
+        </div>,
+        document.body
+      )}
+    </>
   )
 }
