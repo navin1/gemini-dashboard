@@ -1,9 +1,11 @@
 import { useState, useCallback, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Download, RefreshCw } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Download, RefreshCw, Wifi, WifiOff } from 'lucide-react'
 import { KPICard } from '../components/Header/KPICard'
 import { DashboardGrid } from '../components/Dashboard/DashboardGrid'
 import { LoadingOverlay } from '../components/common/LoadingSpinner'
+import { LiveBadge } from '../components/common/LiveBadge'
+import { useLiveStream } from '../hooks/useLiveStream'
 import { fetchHierarchyScorecard } from '../api/scorecard'
 import { createFavorite } from '../api/favorites'
 import { exportPDF } from '../api/pdf'
@@ -18,7 +20,6 @@ function sql(data: ScorecardHierarchy, key: string) {
 
 function makeSeeds(data: ScorecardHierarchy): Widget[] {
   return [
-    // Left column — tier breakdown metrics
     {
       id: 'hier_tier_breakdown', title: 'Tier Breakdown — Offshore / Fixed Fee / Capital',
       chart_type: 'table', x_axis: undefined, y_axis: [],
@@ -27,7 +28,6 @@ function makeSeeds(data: ScorecardHierarchy): Widget[] {
       sql: sql(data, 'tier_breakdown'), data: data.tier_breakdown,
       layout: { i: 'hier_tier_breakdown', x: 0, y: 10, w: 3, h: 8 },
     },
-    // Center — hierarchy drill-down table
     {
       id: 'hier_drill', title: 'Hierarchy Drill-Down',
       chart_type: 'table', x_axis: undefined, y_axis: [],
@@ -36,7 +36,6 @@ function makeSeeds(data: ScorecardHierarchy): Widget[] {
       sql: sql(data, 'hierarchy_drill'), data: data.hierarchy_drill,
       layout: { i: 'hier_drill', x: 3, y: 10, w: 9, h: 14 },
     },
-    // Bottom row
     {
       id: 'hier_cat_monthly', title: 'Spend by Tier',
       chart_type: 'line', x_axis: 'month', y_axis: ['Dollars'], color_field: 'Resource_Category',
@@ -59,6 +58,7 @@ function makeSeeds(data: ScorecardHierarchy): Widget[] {
 interface Props { tabLabel?: string; onRegisterAddWidget?: (fn: (w: Widget) => void) => void }
 
 export function HierarchySummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
+  const queryClient = useQueryClient()
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['scorecard', 'hierarchy'],
     queryFn: fetchHierarchyScorecard,
@@ -68,6 +68,13 @@ export function HierarchySummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
   const [widgets, setWidgets] = useState<Widget[]>([])
   const [customKpis, setCustomKpis] = useState<CustomKpi[]>([])
   const [exporting, setExporting] = useState(false)
+  const [live, setLive] = useState(false)
+
+  const liveStatus = useLiveStream<ScorecardHierarchy>(
+    '/stream/hierarchy',
+    live,
+    (fresh) => queryClient.setQueryData(['scorecard', 'hierarchy'], fresh),
+  )
 
   useEffect(() => {
     if (!data) return
@@ -134,10 +141,20 @@ export function HierarchySummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
         {customKpis.map((k) => (
           <KPICard key={k.id} label={k.label} value={k.value} onRemove={() => removeCustomKpi(k.id)} />
         ))}
-        <div className="ml-auto flex gap-2">
-          <button onClick={() => refetch()} disabled={isFetching} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-2 rounded-lg">
-            <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} /> Refresh
+        <div className="ml-auto flex items-center gap-2">
+          <LiveBadge status={liveStatus} />
+          <button
+            onClick={() => setLive(l => !l)}
+            className={`flex items-center gap-1.5 text-sm border px-3 py-2 rounded-lg transition-colors ${live ? 'border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100' : 'border-gray-200 text-gray-500 hover:text-gray-700'}`}
+          >
+            {live ? <WifiOff size={14} /> : <Wifi size={14} />}
+            {live ? 'Stop Live' : 'Go Live'}
           </button>
+          {!live && (
+            <button onClick={() => refetch()} disabled={isFetching} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-2 rounded-lg">
+              <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} /> Refresh
+            </button>
+          )}
           <button onClick={handleExport} disabled={exporting} className="flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-lg">
             <Download size={14} /> {exporting ? 'Exporting…' : 'Export PDF'}
           </button>

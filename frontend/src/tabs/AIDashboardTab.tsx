@@ -1,7 +1,9 @@
 import { useState, useCallback, useEffect } from 'react'
-import { Download } from 'lucide-react'
+import { Download, Wifi, WifiOff } from 'lucide-react'
 import { DashboardGrid } from '../components/Dashboard/DashboardGrid'
 import { KPICard } from '../components/Header/KPICard'
+import { LiveBadge } from '../components/common/LiveBadge'
+import { useCustomWidgetStream } from '../hooks/useCustomWidgetStream'
 import { createFavorite } from '../api/favorites'
 import { exportPDF } from '../api/pdf'
 import type { Widget, GridLayout, CustomKpi } from '../types'
@@ -20,6 +22,15 @@ export function AIDashboardTab({ tabLabel, onRegisterAddWidget }: Props) {
   const [widgets,    setWidgets]    = useState<Widget[]>([])
   const [customKpis, setCustomKpis] = useState<CustomKpi[]>([])
   const [exporting,  setExporting]  = useState(false)
+  const [live,       setLive]       = useState(false)
+
+  const liveStatus = useCustomWidgetStream(
+    widgets,
+    live,
+    (id, freshData) => setWidgets(prev =>
+      prev.map(w => w.id === id ? { ...w, data: freshData } : w)
+    ),
+  )
 
   const addWidget = useCallback((widget: Widget) => {
     if (widget.chart_type === 'kpi') {
@@ -83,7 +94,7 @@ export function AIDashboardTab({ tabLabel, onRegisterAddWidget }: Props) {
   return (
     <div className="flex flex-col gap-4 p-4">
 
-      {/* ── KPI row + export bar ─────────────────────────────────────────── */}
+      {/* ── KPI row + toolbar ───────────────────────────────────────────────── */}
       {hasContent && (
         <div className="flex items-center gap-3 flex-wrap">
           {customKpis.map((k) => (
@@ -95,6 +106,15 @@ export function AIDashboardTab({ tabLabel, onRegisterAddWidget }: Props) {
                 {widgets.length} widget{widgets.length !== 1 ? 's' : ''} · {widgets.reduce((s, w) => s + w.data.length, 0).toLocaleString()} rows
               </span>
             )}
+            <LiveBadge status={liveStatus} />
+            <button
+              onClick={() => setLive(l => !l)}
+              disabled={widgets.filter(w => w.sql && w.chart_type !== 'kpi').length === 0}
+              className={`flex items-center gap-1.5 text-sm border px-3 py-2 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${live ? 'border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100' : 'border-gray-200 text-gray-500 hover:text-gray-700'}`}
+            >
+              {live ? <WifiOff size={14} /> : <Wifi size={14} />}
+              {live ? 'Stop Live' : 'Go Live'}
+            </button>
             <button
               onClick={handleExport}
               disabled={exporting || !widgets.length}
@@ -107,7 +127,7 @@ export function AIDashboardTab({ tabLabel, onRegisterAddWidget }: Props) {
         </div>
       )}
 
-      {/* ── Chart / table widget grid ────────────────────────────────────── */}
+      {/* ── Widget grid ─────────────────────────────────────────────────────── */}
       <DashboardGrid
         widgets={widgets}
         onRemove={removeWidget}

@@ -1,7 +1,7 @@
 import os
 import httpx
 from dotenv import load_dotenv
-from fastapi import Header, HTTPException
+from fastapi import Header, HTTPException, Query
 from typing import Optional
 
 load_dotenv()
@@ -39,10 +39,16 @@ async def resolve_user(authorization: Optional[str] = Header(default=None)) -> d
     return {"id": ANONYMOUS_USER_ID, "email": ""}
 
 
-def get_request_token(authorization: Optional[str] = Header(default=None)) -> Optional[str]:
-    """FastAPI dependency — extract Bearer token from Authorization header."""
+def get_request_token(
+    authorization: Optional[str] = Header(default=None),
+    token: Optional[str] = Query(default=None),
+) -> Optional[str]:
+    """FastAPI dependency — extract Bearer token from Authorization header or
+    ?token= query param (used by EventSource, which cannot send custom headers)."""
     if authorization and authorization.startswith("Bearer "):
         return authorization.split(" ", 1)[1]
+    if token:
+        return token
     return OAUTH_TOKEN_ENV or None
 
 

@@ -1,9 +1,11 @@
 import { useState, useCallback, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Download, RefreshCw } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Download, RefreshCw, Wifi, WifiOff } from 'lucide-react'
 import { KPICard } from '../components/Header/KPICard'
 import { DashboardGrid } from '../components/Dashboard/DashboardGrid'
 import { LoadingOverlay } from '../components/common/LoadingSpinner'
+import { LiveBadge } from '../components/common/LiveBadge'
+import { useLiveStream } from '../hooks/useLiveStream'
 import { fetchFTEScorecard } from '../api/scorecard'
 import { createFavorite } from '../api/favorites'
 import { exportPDF } from '../api/pdf'
@@ -76,6 +78,7 @@ function makeSeeds(data: ScorecardFTE): Widget[] {
 interface Props { tabLabel?: string; onRegisterAddWidget?: (fn: (w: Widget) => void) => void }
 
 export function FTEHierarchyTab({ tabLabel, onRegisterAddWidget }: Props) {
+  const queryClient = useQueryClient()
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['scorecard', 'fte'],
     queryFn: fetchFTEScorecard,
@@ -85,6 +88,13 @@ export function FTEHierarchyTab({ tabLabel, onRegisterAddWidget }: Props) {
   const [widgets, setWidgets] = useState<Widget[]>([])
   const [customKpis, setCustomKpis] = useState<CustomKpi[]>([])
   const [exporting, setExporting] = useState(false)
+  const [live, setLive] = useState(false)
+
+  const liveStatus = useLiveStream<ScorecardFTE>(
+    '/stream/fte',
+    live,
+    (fresh) => queryClient.setQueryData(['scorecard', 'fte'], fresh),
+  )
 
   useEffect(() => {
     if (!data) return
@@ -159,10 +169,20 @@ export function FTEHierarchyTab({ tabLabel, onRegisterAddWidget }: Props) {
           {customKpis.map((k) => (
             <KPICard key={k.id} label={k.label} value={k.value} onRemove={() => removeCustomKpi(k.id)} />
           ))}
-          <div className="ml-auto flex gap-2">
-            <button onClick={() => refetch()} disabled={isFetching} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-2 rounded-lg">
-              <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} /> Refresh
+          <div className="ml-auto flex items-center gap-2">
+            <LiveBadge status={liveStatus} />
+            <button
+              onClick={() => setLive(l => !l)}
+              className={`flex items-center gap-1.5 text-sm border px-3 py-2 rounded-lg transition-colors ${live ? 'border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100' : 'border-gray-200 text-gray-500 hover:text-gray-700'}`}
+            >
+              {live ? <WifiOff size={14} /> : <Wifi size={14} />}
+              {live ? 'Stop Live' : 'Go Live'}
             </button>
+            {!live && (
+              <button onClick={() => refetch()} disabled={isFetching} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-2 rounded-lg">
+                <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} /> Refresh
+              </button>
+            )}
             <button onClick={handleExport} disabled={exporting} className="flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-lg">
               <Download size={14} /> {exporting ? 'Exporting…' : 'Export PDF'}
             </button>
