@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Download, Wifi, WifiOff } from 'lucide-react'
 import { DashboardGrid } from '../components/Dashboard/DashboardGrid'
 import { KPICard } from '../components/Header/KPICard'
@@ -6,6 +7,7 @@ import { LiveBadge } from '../components/common/LiveBadge'
 import { useCustomWidgetStream } from '../hooks/useCustomWidgetStream'
 import { createFavorite } from '../api/favorites'
 import { exportPDF } from '../api/pdf'
+import { fetchStreamConfig } from '../api/stream'
 import type { Widget, GridLayout, CustomKpi } from '../types'
 
 let _id = 0
@@ -13,24 +15,55 @@ function nextId() { return `w_${++_id}_${Date.now()}` }
 
 const DEFAULT_LAYOUT: GridLayout = { i: '', x: 0, y: 0, w: 6, h: 10 }
 
+function storageKey(tabId: string) { return `gd_ws_${tabId}` }
+
+function loadState(tabId: string): { widgets: Widget[]; customKpis: CustomKpi[] } {
+  try {
+    const raw = localStorage.getItem(storageKey(tabId))
+    return raw ? JSON.parse(raw) : { widgets: [], customKpis: [] }
+  } catch { return { widgets: [], customKpis: [] } }
+}
+
 interface Props {
+  tabId?: string
   tabLabel?: string
   onRegisterAddWidget?: (fn: (widget: Widget) => void) => void
 }
 
-export function AIDashboardTab({ tabLabel, onRegisterAddWidget }: Props) {
-  const [widgets,    setWidgets]    = useState<Widget[]>([])
-  const [customKpis, setCustomKpis] = useState<CustomKpi[]>([])
+export function AIDashboardTab({ tabId = 'ai', tabLabel, onRegisterAddWidget }: Props) {
+  const saved = loadState(tabId)
+  const [widgets,    setWidgets]    = useState<Widget[]>(saved.widgets)
+  const [customKpis, setCustomKpis] = useState<CustomKpi[]>(saved.customKpis)
   const [exporting,  setExporting]  = useState(false)
-  const [live,       setLive]       = useState(false)
+
+  const { data: streamConfig } = useQuery({
+    queryKey: ['stream', 'config'],
+    queryFn: fetchStreamConfig,
+    staleTime: Infinity,
+  })
+  const pollInterval = streamConfig?.poll_interval_seconds
+
+  // Persist on every change
+  useEffect(() => {
+    try { localStorage.setItem(storageKey(tabId), JSON.stringify({ widgets, customKpis })) }
+    catch { /* quota exceeded — silent */ }
+  }, [tabId, widgets, customKpis])
 
   const liveStatus = useCustomWidgetStream(
     widgets,
-    live,
     (id, freshData) => setWidgets(prev =>
       prev.map(w => w.id === id ? { ...w, data: freshData } : w)
     ),
   )
+
+  const eligibleWidgets = widgets.filter(w => w.sql?.trim() && w.chart_type !== 'kpi')
+  const anyLive = eligibleWidgets.some(w => w.live)
+
+  function setAllLive(flag: boolean) {
+    setWidgets(prev => prev.map(w =>
+      w.sql?.trim() && w.chart_type !== 'kpi' ? { ...w, live: flag } : w
+    ))
+  }
 
   const addWidget = useCallback((widget: Widget) => {
     if (widget.chart_type === 'kpi') {
@@ -107,14 +140,18 @@ export function AIDashboardTab({ tabLabel, onRegisterAddWidget }: Props) {
               </span>
             )}
             <LiveBadge status={liveStatus} />
-            <button
-              onClick={() => setLive(l => !l)}
-              disabled={widgets.filter(w => w.sql && w.chart_type !== 'kpi').length === 0}
-              className={`flex items-center gap-1.5 text-sm border px-3 py-2 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${live ? 'border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100' : 'border-gray-200 text-gray-500 hover:text-gray-700'}`}
-            >
-              {live ? <WifiOff size={14} /> : <Wifi size={14} />}
-              {live ? 'Stop Live' : 'Go Live'}
-            </button>
+            {eligibleWidgets.length > 0 && (
+              <div className="flex flex-col items-center gap-0.5">
+                <button
+                  onClick={() => setAllLive(!anyLive)}
+                  className={`flex items-center gap-1.5 text-sm border px-3 py-2 rounded-lg transition-colors ${anyLive ? 'border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100' : 'border-gray-200 text-gray-500 hover:text-gray-700'}`}
+                >
+                  {anyLive ? <WifiOff size={14} /> : <Wifi size={14} />}
+                  {anyLive ? 'Stop Live' : 'Go Live'}
+                </button>
+                {pollInterval && <span className="text-[10px] text-red-500">Every {pollInterval}sec Refresh</span>}
+              </div>
+            )}
             <button
               onClick={handleExport}
               disabled={exporting || !widgets.length}

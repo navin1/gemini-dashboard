@@ -92,7 +92,7 @@ function TabContent({ tabId, tabLabel, registerCb }: { tabId: string; tabLabel: 
     case 'favorites': return <FavoritesTab />
     case 'glossary':  return <GlossaryTab />
     default:
-      return <AIDashboardTab key={tabId} tabLabel={tabLabel} onRegisterAddWidget={registerCb} />
+      return <AIDashboardTab key={tabId} tabId={tabId} tabLabel={tabLabel} onRegisterAddWidget={registerCb} />
   }
 }
 
@@ -211,18 +211,18 @@ export default function App() {
     setRenamingId(null)
   }
 
-  // Copy a widget to another tab — original stays, copy gets a new ID
+  // Copy a widget to another tab — original stays, copy gets a new ID; live resets on destination
   const copyWidgetToTab = useCallback((widget: Widget, tabId: string) => {
-    const copy: Widget = { ...widget, id: `copy_${Date.now()}`, homeTabId: undefined }
+    const copy: Widget = { ...widget, id: `copy_${Date.now()}`, homeTabId: undefined, live: false }
     _addWidgetCallbacks[tabId]?.(copy)
   }, [])
 
-  // Send a widget to any tab (used by "Move to tab" and "return home on remove")
+  // Send a widget to any tab (used by "Move to tab" and "return home on remove"); live resets on destination
   const sendWidgetToTab = useCallback((widget: Widget, tabId: string) => {
     const returningHome = widget.homeTabId === tabId
     const widgetToSend = returningHome
-      ? { ...widget, homeTabId: undefined }
-      : { ...widget, homeTabId: widget.homeTabId ?? activeTabId }
+      ? { ...widget, homeTabId: undefined, live: false }
+      : { ...widget, homeTabId: widget.homeTabId ?? activeTabId, live: false }
     // All tabs are always mounted, so callbacks are always live
     _addWidgetCallbacks[tabId]?.(widgetToSend)
     setActiveTabId(tabId)

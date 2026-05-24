@@ -6,19 +6,17 @@ import type { LiveStatus } from './useLiveStream'
 export type { LiveStatus }
 
 /**
- * Session-based SSE stream for arbitrary custom widgets.
+ * Session-based SSE stream for widgets that have `live: true` set.
  *
  * Flow:
- *   1. POST /api/stream/session with [{id, sql}] → session_id
+ *   1. POST /api/stream/session with [{id, sql}] for all live widgets → session_id
  *   2. Open EventSource on /api/stream/custom/{session_id}
  *   3. On each event, call onUpdate(widgetId, freshData) for each widget update
  *
- * Reconnects only when the set of widget IDs changes (not when data changes),
- * so adding a widget reopens the stream while rearranging widgets does not.
+ * Reconnects only when the set of live widget IDs changes.
  */
 export function useCustomWidgetStream(
   widgets: Widget[],
-  enabled: boolean,
   onUpdate: (id: string, data: Record<string, unknown>[]) => void,
 ): LiveStatus {
   const [status, setStatus] = useState<LiveStatus>('off')
@@ -26,24 +24,24 @@ export function useCustomWidgetStream(
   const onUpdateRef = useRef(onUpdate)
   useEffect(() => { onUpdateRef.current = onUpdate })
 
-  // Keep a ref to the latest widget SQL map so the effect closure can read it
-  // without being included in deps (prevents reconnect on data-only changes)
   const widgetSqlRef = useRef<Record<string, string>>({})
   useEffect(() => {
     widgetSqlRef.current = Object.fromEntries(
-      widgets.filter(w => w.sql && w.chart_type !== 'kpi').map(w => [w.id, w.sql])
+      widgets
+        .filter(w => w.live && w.sql && w.chart_type !== 'kpi')
+        .map(w => [w.id, w.sql])
     )
   })
 
-  // Stable key: sorted IDs of streamable widgets — changes only when widgets are added/removed
+  // Stable key: sorted IDs of live streamable widgets
   const widgetKey = widgets
-    .filter(w => w.sql && w.chart_type !== 'kpi')
+    .filter(w => w.live && w.sql && w.chart_type !== 'kpi')
     .map(w => w.id)
     .sort()
     .join(',')
 
   useEffect(() => {
-    if (!enabled || !widgetKey) {
+    if (!widgetKey) {
       esRef.current?.close()
       esRef.current = null
       setStatus('off')
@@ -98,7 +96,7 @@ export function useCustomWidgetStream(
       esRef.current = null
       setStatus('off')
     }
-  }, [enabled, widgetKey])
+  }, [widgetKey])
 
   return status
 }

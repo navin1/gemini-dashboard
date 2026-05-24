@@ -1,18 +1,33 @@
 import { useState, useCallback, useEffect } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Download, RefreshCw, Wifi, WifiOff } from 'lucide-react'
+import { fetchStreamConfig } from '../api/stream'
 import { KPICard } from '../components/Header/KPICard'
 import { DashboardGrid } from '../components/Dashboard/DashboardGrid'
 import { LoadingOverlay } from '../components/common/LoadingSpinner'
 import { LiveBadge } from '../components/common/LiveBadge'
-import { useLiveStream } from '../hooks/useLiveStream'
+import { useCustomWidgetStream } from '../hooks/useCustomWidgetStream'
 import { fetchHierarchyScorecard } from '../api/scorecard'
 import { createFavorite } from '../api/favorites'
 import { exportPDF } from '../api/pdf'
 import type { Widget, GridLayout, ScorecardHierarchy, CustomKpi } from '../types'
 
-
+const STORAGE_KEY = 'gd_ws_hierarchy'
 const SEED_IDS = ['hier_tier_breakdown', 'hier_drill', 'hier_cat_monthly', 'hier_billtype_monthly']
+
+function loadState(): { widgets: Widget[]; customKpis: CustomKpi[] } {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    return raw ? JSON.parse(raw) : { widgets: [], customKpis: [] }
+  } catch { return { widgets: [], customKpis: [] } }
+}
+
+function saveState(widgets: Widget[], customKpis: CustomKpi[]) {
+  try {
+    const toSave = widgets.map(w => SEED_IDS.includes(w.id) ? { ...w, data: [] } : w)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ widgets: toSave, customKpis }))
+  } catch { /* quota exceeded */ }
+}
 
 function sql(data: ScorecardHierarchy, key: string) {
   return data._sql?.[key] ?? ''
@@ -58,30 +73,51 @@ function makeSeeds(data: ScorecardHierarchy): Widget[] {
 interface Props { tabLabel?: string; onRegisterAddWidget?: (fn: (w: Widget) => void) => void }
 
 export function HierarchySummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
-  const queryClient = useQueryClient()
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['scorecard', 'hierarchy'],
     queryFn: fetchHierarchyScorecard,
     staleTime: 5 * 60 * 1000,
   })
 
-  const [widgets, setWidgets] = useState<Widget[]>([])
-  const [customKpis, setCustomKpis] = useState<CustomKpi[]>([])
+  const saved = loadState()
+  const [widgets, setWidgets] = useState<Widget[]>(saved.widgets)
+  const [customKpis, setCustomKpis] = useState<CustomKpi[]>(saved.customKpis)
   const [exporting, setExporting] = useState(false)
-  const [live, setLive] = useState(false)
 
-  const liveStatus = useLiveStream<ScorecardHierarchy>(
-    '/stream/hierarchy',
-    live,
-    (fresh) => queryClient.setQueryData(['scorecard', 'hierarchy'], fresh),
+  const { data: streamConfig } = useQuery({
+    queryKey: ['stream', 'config'],
+    queryFn: fetchStreamConfig,
+    staleTime: Infinity,
+  })
+  const pollInterval = streamConfig?.poll_interval_seconds
+
+  useEffect(() => { saveState(widgets, customKpis) }, [widgets, customKpis])
+
+  const liveStatus = useCustomWidgetStream(
+    widgets,
+    (id, freshData) => setWidgets(prev => prev.map(w => w.id === id ? { ...w, data: freshData } : w)),
   )
+
+  const eligibleWidgets = widgets.filter(w => w.sql?.trim() && w.chart_type !== 'kpi')
+  const anyLive = eligibleWidgets.some(w => w.live)
+
+  function setAllLive(flag: boolean) {
+    setWidgets(prev => prev.map(w =>
+      w.sql?.trim() && w.chart_type !== 'kpi' ? { ...w, live: flag } : w
+    ))
+  }
 
   useEffect(() => {
     if (!data) return
     const seeds = makeSeeds(data)
     setWidgets((prev) => {
+      const prevMap = new Map(prev.map(w => [w.id, w]))
+      const mergedSeeds = seeds.map(s => {
+        const p = prevMap.get(s.id)
+        return p ? { ...s, live: p.live, layout: p.layout ?? s.layout } : s
+      })
       const userAdded = prev.filter((w) => !SEED_IDS.includes(w.id))
-      return [...seeds, ...userAdded]
+      return [...mergedSeeds, ...userAdded]
     })
   }, [data])
 
@@ -127,7 +163,7 @@ export function HierarchySummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
     finally { setExporting(false) }
   }
 
-  if (isLoading) return <LoadingOverlay label="Loading Hierarchy Summary…" />
+  if (isLoading && !widgets.length) return <LoadingOverlay label="Loading Hierarchy Summary…" />
   if (isError) return (
     <div className="p-8 text-center">
       <p className="text-red-600 font-medium mb-3">Failed to load hierarchy data</p>
@@ -143,18 +179,21 @@ export function HierarchySummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
         ))}
         <div className="ml-auto flex items-center gap-2">
           <LiveBadge status={liveStatus} />
-          <button
-            onClick={() => setLive(l => !l)}
-            className={`flex items-center gap-1.5 text-sm border px-3 py-2 rounded-lg transition-colors ${live ? 'border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100' : 'border-gray-200 text-gray-500 hover:text-gray-700'}`}
-          >
-            {live ? <WifiOff size={14} /> : <Wifi size={14} />}
-            {live ? 'Stop Live' : 'Go Live'}
-          </button>
-          {!live && (
-            <button onClick={() => refetch()} disabled={isFetching} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-2 rounded-lg">
-              <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} /> Refresh
-            </button>
+          {eligibleWidgets.length > 0 && (
+            <div className="flex flex-col items-center gap-0.5">
+              <button
+                onClick={() => setAllLive(!anyLive)}
+                className={`flex items-center gap-1.5 text-sm border px-3 py-2 rounded-lg transition-colors ${anyLive ? 'border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100' : 'border-gray-200 text-gray-500 hover:text-gray-700'}`}
+              >
+                {anyLive ? <WifiOff size={14} /> : <Wifi size={14} />}
+                {anyLive ? 'Stop Live' : 'Go Live'}
+              </button>
+              {pollInterval && <span className="text-[10px] text-red-500">Every {pollInterval}sec Refresh</span>}
+            </div>
           )}
+          <button onClick={() => refetch()} disabled={isFetching} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-2 rounded-lg">
+            <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} /> Refresh
+          </button>
           <button onClick={handleExport} disabled={exporting} className="flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-lg">
             <Download size={14} /> {exporting ? 'Exporting…' : 'Export PDF'}
           </button>
