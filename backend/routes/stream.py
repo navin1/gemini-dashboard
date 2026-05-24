@@ -1,10 +1,13 @@
 import asyncio
 import json
 import os
+import time
+import uuid
 from typing import AsyncGenerator, Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from auth import get_request_token
 import bigquery_client
@@ -163,3 +166,113 @@ async def stream_hierarchy(
 async def stream_config():
     """Expose the active poll interval so the frontend can show it."""
     return {"poll_interval_seconds": POLL_INTERVAL}
+
+
+# ── Custom widget streaming ───────────────────────────────────────────────────
+# SSE is GET-only, so SQL can't be sent in the request body.
+# Solution: two-step session pattern.
+#   1. POST /api/stream/session  → register widget SQLs, get session_id
+#   2. GET  /api/stream/custom/{session_id} → SSE stream for those widgets
+#
+# Sessions are in-memory (ephemeral per backend instance) and expire after
+# SESSION_TTL seconds of inactivity to prevent memory leaks.
+
+SESSION_TTL = 600  # seconds — session expires if no SSE connection opens
+
+_sessions: dict[str, dict] = {}  # session_id → {widgets, token, last_used}
+
+
+class WidgetEntry(BaseModel):
+    id: str
+    sql: str
+
+
+class SessionRequest(BaseModel):
+    widgets: list[WidgetEntry]
+
+
+@router.post("/session")
+async def create_session(
+    body: SessionRequest,
+    token: Optional[str] = Depends(get_request_token),
+):
+    """
+    Register a list of {id, sql} widget definitions.
+    Returns a session_id to pass to GET /api/stream/custom/{session_id}.
+    Call again whenever widgets change (old session will expire on its own).
+    """
+    if not body.widgets:
+        raise HTTPException(status_code=400, detail="widgets list must not be empty")
+
+    session_id = str(uuid.uuid4())
+    _sessions[session_id] = {
+        "widgets": [w.model_dump() for w in body.widgets],
+        "token": token,
+        "last_used": time.time(),
+    }
+    # Evict sessions older than SESSION_TTL
+    now = time.time()
+    stale = [k for k, v in _sessions.items() if now - v["last_used"] > SESSION_TTL]
+    for k in stale:
+        del _sessions[k]
+
+    return {"session_id": session_id, "widget_count": len(body.widgets)}
+
+
+async def _fetch_custom(widgets: list[dict], token: Optional[str]) -> dict:
+    """Re-run every widget's SQL in parallel and return {id → data} mapping."""
+    loop = asyncio.get_running_loop()
+
+    async def run_one(w: dict):
+        try:
+            data = await loop.run_in_executor(
+                None, bigquery_client.run_query, w["sql"], token
+            )
+            return {"id": w["id"], "data": data, "error": None}
+        except Exception as e:
+            return {"id": w["id"], "data": [], "error": str(e)}
+
+    results = await asyncio.gather(*[run_one(w) for w in widgets])
+    return {"updates": results}
+
+
+@router.get("/custom/{session_id}")
+async def stream_custom(
+    session_id: str,
+    request: Request,
+    token: Optional[str] = Depends(get_request_token),
+):
+    """
+    SSE stream that re-runs the SQL for each widget registered in the session
+    every POLL_INTERVAL seconds and pushes the refreshed data.
+
+    Each event: data: {"updates": [{"id": "...", "data": [...], "error": null}, ...]}
+    """
+    if session_id not in _sessions:
+        raise HTTPException(status_code=404, detail="Session not found or expired. Call POST /api/stream/session again.")
+
+    session = _sessions[session_id]
+    session["last_used"] = time.time()
+    widgets = session["widgets"]
+    # Prefer the token from the session (set at session creation time)
+    effective_token = session.get("token") or token
+
+    async def generate() -> AsyncGenerator[str, None]:
+        elapsed = 0
+        while not await request.is_disconnected():
+            if elapsed == 0 or elapsed >= POLL_INTERVAL:
+                payload = await _fetch_custom(widgets, effective_token)
+                yield f"data: {json.dumps(payload)}\n\n"
+                elapsed = 0
+            await asyncio.sleep(HEARTBEAT_INTERVAL)
+            elapsed += HEARTBEAT_INTERVAL
+            yield ": heartbeat\n\n"
+
+        # Clean up session when client disconnects
+        _sessions.pop(session_id, None)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
