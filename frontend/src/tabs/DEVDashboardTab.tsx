@@ -11,9 +11,10 @@ import { fetchHierarchyScorecard } from '../api/scorecard'
 import { createFavorite } from '../api/favorites'
 import { exportPDF } from '../api/pdf'
 import type { Widget, GridLayout, ScorecardHierarchy, CustomKpi } from '../types'
+import { TabThemeContext } from '../context/TabThemeContext'
 
 const STORAGE_KEY = 'gd_ws_hierarchy'
-const SEED_IDS = ['hier_tier_breakdown', 'hier_drill', 'hier_cat_monthly', 'hier_billtype_monthly']
+const SEED_IDS = ['hier_tier_breakdown', 'hier_drill', 'hier_cat_monthly', 'hier_billtype_monthly', 'hier_airflow_dags']
 
 function loadState(): { widgets: Widget[]; customKpis: CustomKpi[] } {
   try {
@@ -67,12 +68,25 @@ function makeSeeds(data: ScorecardHierarchy): Widget[] {
       sql: sql(data, 'monthly_vendor_spend'), data: data.billtype_monthly,
       layout: { i: 'hier_billtype_monthly', x: 4, y: 0, w: 4, h: 6 },
     },
+    {
+      id: 'hier_airflow_dags', title: 'Airflow DAGs',
+      chart_type: 'airflow_dags', x_axis: undefined, y_axis: [],
+      stacked: false, dual_axis: false,
+      ai_description: '',
+      sql: '', data: [],
+      layout: { i: 'hier_airflow_dags', x: 0, y: 24, w: 12, h: 9, minH: 6 },
+    },
   ]
 }
 
-interface Props { tabLabel?: string; onRegisterAddWidget?: (fn: (w: Widget) => void) => void }
+interface Props {
+  tabLabel?: string
+  onRegisterAddWidget?: (fn: (w: Widget) => void) => void
+  onOpenDagTab: (dagId: string, env: string) => void
+}
 
-export function HierarchySummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
+export function DEVDashboardTab({ tabLabel, onRegisterAddWidget, onOpenDagTab }: Props) {
+  const tabTheme = { headerBg: 'bg-yellow-50', headerBorder: 'border-yellow-100', airflowEnv: 'Dev', tabPrefix: 'DEV', onOpenDagTab }
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['scorecard', 'hierarchy'],
     queryFn: fetchHierarchyScorecard,
@@ -98,12 +112,12 @@ export function HierarchySummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
     (id, freshData) => setWidgets(prev => prev.map(w => w.id === id ? { ...w, data: freshData } : w)),
   )
 
-  const eligibleWidgets = widgets.filter(w => w.sql?.trim() && w.chart_type !== 'kpi')
+  const eligibleWidgets = widgets.filter(w => (w.sql?.trim() || w.chart_type === 'airflow_dags') && w.chart_type !== 'kpi')
   const anyLive = eligibleWidgets.some(w => w.live)
 
   function setAllLive(flag: boolean) {
     setWidgets(prev => prev.map(w =>
-      w.sql?.trim() && w.chart_type !== 'kpi' ? { ...w, live: flag } : w
+      (w.sql?.trim() || w.chart_type === 'airflow_dags') && w.chart_type !== 'kpi' ? { ...w, live: flag } : w
     ))
   }
 
@@ -159,11 +173,11 @@ export function HierarchySummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
   async function handleExport() {
     if (!widgets.length) return
     setExporting(true)
-    try { await exportPDF(tabLabel ?? 'Hierarchy Summary Scorecard', tabLabel ?? 'Hierarchy Summary', widgets) }
+    try { await exportPDF(tabLabel ?? 'DEV Dashboard', tabLabel ?? 'DEV Dashboard', widgets) }
     finally { setExporting(false) }
   }
 
-  if (isLoading && !widgets.length) return <LoadingOverlay label="Loading Hierarchy Summary…" />
+  if (isLoading && !widgets.length) return <LoadingOverlay label="Loading DEV Dashboard…" />
   if (isError) return (
     <div className="p-8 text-center">
       <p className="text-red-600 font-medium mb-3">Failed to load hierarchy data</p>
@@ -172,6 +186,7 @@ export function HierarchySummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
   )
 
   return (
+    <TabThemeContext.Provider value={tabTheme}>
     <div className="flex flex-col gap-4 p-4">
       <div className="flex items-center gap-3 flex-wrap">
         {customKpis.map((k) => (
@@ -204,5 +219,6 @@ export function HierarchySummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
         <DashboardGrid widgets={widgets} onRemove={removeWidget} onSaveFavorite={saveFavorite} onLayoutChange={handleLayoutChange} onUpdate={updateWidget} />
       </div>
     </div>
+    </TabThemeContext.Provider>
   )
 }

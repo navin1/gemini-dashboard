@@ -1,20 +1,22 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { GoogleOAuthProvider } from '@react-oauth/google'
-import { LayoutDashboard, Users, GitBranch, Sparkles, Star, BookOpen, Plus, X as XIcon, Pencil } from 'lucide-react'
+import { LayoutDashboard, Users, GitBranch, Sparkles, Star, BookOpen, Plus, X as XIcon, Pencil, Wind } from 'lucide-react'
 import { Header } from './components/Header/Header'
-import { FTEHierarchyTab } from './tabs/FTEHierarchyTab'
-import { VendorSummaryTab } from './tabs/VendorSummaryTab'
-import { HierarchySummaryTab } from './tabs/HierarchySummaryTab'
-import { AIDashboardTab } from './tabs/AIDashboardTab'
+import { UATDashboardTab } from './tabs/UATDashboardTab'
+import { PRDDashboardTab } from './tabs/PRDDashboardTab'
+import { DEVDashboardTab } from './tabs/DEVDashboardTab'
+import { MyDashboardTab } from './tabs/MyDashboardTab'
 import { FavoritesTab } from './tabs/FavoritesTab'
 import { GlossaryTab } from './tabs/GlossaryTab'
 import { ChatPanel } from './components/Chat/ChatPanel'
 import { AuthProvider } from './context/AuthContext'
 import { WidgetTransferProvider } from './context/WidgetTransferContext'
 import { fetchFTEScorecard, fetchVendorScorecard, fetchHierarchyScorecard } from './api/scorecard'
+import DagDetailTab from './components/Airflow/DagDetailTab'
+import SqlTab from './components/Airflow/SqlTab'
 import type { ChatWidgetDef } from './api/chat'
-import type { Widget } from './types'
+import type { Widget, AirflowTab } from './types'
 import clsx from 'clsx'
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1 } } })
@@ -26,13 +28,18 @@ qc.prefetchQuery({ queryKey: ['scorecard', 'hierarchy'], queryFn: fetchHierarchy
 
 // ── Fixed tabs (always present, not closeable) ────────────────────────────────
 const FIXED_TABS = [
-  { id: 'fte',       label: 'FTE Hierarchy',     icon: LayoutDashboard, badge: 'Scorecard' },
-  { id: 'vendor',    label: 'Vendor Summary',     icon: Users,           badge: 'Scorecard' },
-  { id: 'hierarchy', label: 'Hierarchy Summary',  icon: GitBranch,       badge: 'Scorecard' },
-  { id: 'ai',        label: 'My Dashboard',       icon: Sparkles,        badge: 'Dynamic'   },
-  { id: 'favorites', label: 'Favorites',          icon: Star,            badge: 'Saved'     },
-  { id: 'glossary',  label: 'Glossary',           icon: BookOpen,        badge: 'Reference' },
+  { id: 'fte',       label: 'UAT Dashboard',  icon: LayoutDashboard, badge: 'Scorecard' },
+  { id: 'vendor',    label: 'PRD Dashboard',  icon: Users,           badge: 'Scorecard' },
+  { id: 'hierarchy', label: 'DEV Dashboard',  icon: GitBranch,       badge: 'Scorecard' },
+  { id: 'ai',        label: 'My Dashboard',   icon: Sparkles,        badge: 'Dynamic'   },
+  { id: 'favorites', label: 'Favorites',      icon: Star,            badge: 'Saved'     },
+  { id: 'glossary',  label: 'Glossary',       icon: BookOpen,        badge: 'Reference' },
 ] as const
+
+function envToPrefix(env: string): string {
+  const map: Record<string, string> = { UAT: 'UAT', PROD: 'PRD', Dev: 'DEV' }
+  return map[env] ?? env
+}
 
 type FixedTabId = typeof FIXED_TABS[number]['id']
 
@@ -75,7 +82,7 @@ function saveTabOrder(order: string[]) {
 let _tabSeq = 0
 
 // ── Per-custom-tab widget registry ───────────────────────────────────────────
-// AIDashboardTab receives an onAddExternalWidget ref so the chat can push widgets into it.
+// MyDashboardTab receives an onAddExternalWidget ref so the chat can push widgets into it.
 // We store these callbacks by tab id.
 const _addWidgetCallbacks: Record<string, ((w: Widget) => void)> = {}
 
@@ -83,21 +90,62 @@ function registerAddWidget(tabId: string, fn: (w: Widget) => void) {
   _addWidgetCallbacks[tabId] = fn
 }
 
+// Module-level ref for chat SQL injection (set by ChatPanel, called by SqlTab)
+let _injectSqlToChat: ((sql: string) => void) | null = null
+
 // ── Content router ────────────────────────────────────────────────────────────
-function TabContent({ tabId, tabLabel, registerCb }: { tabId: string; tabLabel: string; registerCb: (fn: (w: Widget) => void) => void }) {
+function TabContent({
+  tabId, tabLabel, registerCb,
+  airflowTabs, onOpenDagTab, onOpenSqlTab,
+}: {
+  tabId: string
+  tabLabel: string
+  registerCb: (fn: (w: Widget) => void) => void
+  airflowTabs: AirflowTab[]
+  onOpenDagTab: (dagId: string, env: string) => void
+  onOpenSqlTab: (dagId: string, taskId: string, env: string, runId?: string, operatorFull?: string) => void
+}) {
+  const airflowTab = airflowTabs.find(t => t.id === tabId)
+
+  if (airflowTab?.type === 'airflow_dag') {
+    return (
+      <DagDetailTab
+        dagId={airflowTab.dagId}
+        env={airflowTab.env}
+        onOpenSqlTab={onOpenSqlTab}
+      />
+    )
+  }
+
+  if (airflowTab?.type === 'airflow_sql') {
+    return (
+      <SqlTab
+        dagId={airflowTab.dagId}
+        taskId={airflowTab.taskId!}
+        env={airflowTab.env}
+        runId={airflowTab.runId}
+        operatorFull={airflowTab.operatorFull}
+        onAnalyzeWithGemini={(sql) => {
+          if (_injectSqlToChat) _injectSqlToChat(sql)
+        }}
+      />
+    )
+  }
+
   switch (tabId as FixedTabId) {
-    case 'fte':       return <FTEHierarchyTab tabLabel={tabLabel} onRegisterAddWidget={registerCb} />
-    case 'vendor':    return <VendorSummaryTab tabLabel={tabLabel} onRegisterAddWidget={registerCb} />
-    case 'hierarchy': return <HierarchySummaryTab tabLabel={tabLabel} onRegisterAddWidget={registerCb} />
+    case 'fte':
+      return <UATDashboardTab tabLabel={tabLabel} onRegisterAddWidget={registerCb} onOpenDagTab={onOpenDagTab} />
+    case 'vendor':
+      return <PRDDashboardTab tabLabel={tabLabel} onRegisterAddWidget={registerCb} onOpenDagTab={onOpenDagTab} />
+    case 'hierarchy':
+      return <DEVDashboardTab tabLabel={tabLabel} onRegisterAddWidget={registerCb} onOpenDagTab={onOpenDagTab} />
     case 'favorites': return <FavoritesTab />
     case 'glossary':  return <GlossaryTab />
     default:
-      return <AIDashboardTab key={tabId} tabId={tabId} tabLabel={tabLabel} onRegisterAddWidget={registerCb} />
+      return <MyDashboardTab key={tabId} tabId={tabId} tabLabel={tabLabel} onRegisterAddWidget={registerCb} />
   }
 }
 
-// ── Updated AIDashboardTab must accept onRegisterAddWidget — we patch it here ─
-// (See note below App component)
 
 export default function App() {
   const [activeTabId, setActiveTabId] = useState<string>('ai')
@@ -115,12 +163,18 @@ export default function App() {
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
 
+  // Ephemeral Airflow tabs (not persisted to localStorage)
+  const [airflowTabs, setAirflowTabs] = useState<AirflowTab[]>([])
+
   // Fixed tab label overrides (editable, persisted)
   const [fixedTabLabels, setFixedTabLabels] = useState<Record<string, string>>(() => {
     try {
       const stored = JSON.parse(localStorage.getItem('fixed_tab_labels') || '{}')
-      // Migrate old default name → new default name so the rename is transparent
-      if (stored['ai'] === 'AI Dashboard') delete stored['ai']
+      // Migrate old default names → new defaults so renames are transparent
+      if (stored['ai'] === 'AI Dashboard' || stored['ai'] === 'My Dashboard') delete stored['ai']
+      if (stored['fte'] === 'FTE Hierarchy' || stored['fte'] === 'UAT Dashboard') delete stored['fte']
+      if (stored['vendor'] === 'Vendor Summary' || stored['vendor'] === 'PRD Dashboard') delete stored['vendor']
+      if (stored['hierarchy'] === 'Hierarchy Summary' || stored['hierarchy'] === 'DEV Dashboard') delete stored['hierarchy']
       return stored
     } catch { return {} }
   })
@@ -190,6 +244,33 @@ export default function App() {
   }
 
   function handleDragEnd() { setDragId(null); setDragOverId(null) }
+
+  function openAirflowDagTab(dagId: string, env: string) {
+    const id = `airflow_dag_${dagId}_${env}`
+    if (airflowTabs.some(t => t.id === id)) { setActiveTabId(id); return }
+    const prefix = envToPrefix(env)
+    const tab: AirflowTab = { id, label: `[${prefix}] ${dagId}`, type: 'airflow_dag', dagId, env }
+    setAirflowTabs(prev => [...prev, tab])
+    setTabOrder(prev => { const next = [...prev, id]; saveTabOrder(next); return next })
+    setActiveTabId(id)
+  }
+
+  function openAirflowSqlTab(dagId: string, taskId: string, env: string, runId?: string, operatorFull?: string) {
+    const id = `airflow_sql_${dagId}_${taskId}_${env}`
+    if (airflowTabs.some(t => t.id === id)) { setActiveTabId(id); return }
+    const prefix = envToPrefix(env)
+    const tab: AirflowTab = { id, label: `[${prefix}] ${taskId} | SQL`, type: 'airflow_sql', dagId, env, runId, taskId, operatorFull }
+    setAirflowTabs(prev => [...prev, tab])
+    setTabOrder(prev => { const next = [...prev, id]; saveTabOrder(next); return next })
+    setActiveTabId(id)
+  }
+
+  function closeAirflowTab(id: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    setAirflowTabs(prev => prev.filter(t => t.id !== id))
+    setTabOrder(prev => { const next = prev.filter(tid => tid !== id); saveTabOrder(next); return next })
+    if (activeTabId === id) setActiveTabId('fte')
+  }
 
   function startRename(tab: { id: string; label: string }, e: React.MouseEvent) {
     e.stopPropagation()
@@ -269,19 +350,44 @@ export default function App() {
         <WidgetTransferProvider value={{ targets: transferTargets, sendToTab: sendWidgetToTab, copyToTab: copyWidgetToTab, currentTabId: activeTabId }}>
         <div className="h-screen flex flex-col bg-gray-50 font-sans overflow-hidden">
           <Header
-            title="Workforce IQ"
+            title="EDA OSR Helper"
             subtitle="Interactive Agent"
           />
 
           {/* ── Tab bar ─────────────────────────────────────────────────── */}
           <div className="bg-white border-b border-gray-200 px-3 flex items-end gap-0.5 overflow-x-auto">
             {tabOrder.map((id) => {
-              const fixed = FIXED_TABS.find((t) => t.id === id)
-              const custom = customTabs.find((t) => t.id === id)
-              if (!fixed && !custom) return null
-              const isActive = id === activeTabId
+              const fixed    = FIXED_TABS.find((t) => t.id === id)
+              const custom   = customTabs.find((t) => t.id === id)
+              const airflow  = airflowTabs.find((t) => t.id === id)
+              if (!fixed && !custom && !airflow) return null
+              const isActive     = id === activeTabId
               const isDropTarget = dragOverId === id
-              const isDragging = dragId === id
+              const isDragging   = dragId === id
+
+              // Airflow tab rendering
+              if (airflow) {
+                return (
+                  <div
+                    key={id}
+                    onClick={() => setActiveTabId(id)}
+                    className={clsx(
+                      'group flex items-center gap-1 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 cursor-pointer',
+                      isActive ? 'border-brand-600 text-brand-700 bg-brand-50' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50',
+                    )}
+                  >
+                    <Wind size={13} className={isActive ? 'text-brand-600' : 'text-gray-400'} />
+                    <span className="max-w-[160px] truncate" title={airflow.label}>{airflow.label}</span>
+                    <button
+                      onClick={(e) => closeAirflowTab(id, e)}
+                      className="p-0.5 text-gray-400 hover:text-red-500 rounded ml-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Close tab"
+                    >
+                      <XIcon size={11} />
+                    </button>
+                  </div>
+                )
+              }
 
               if (fixed) {
                 const Icon = fixed.icon
@@ -414,20 +520,31 @@ export default function App() {
           {/* ── Content — all tabs always mounted; inactive hidden via CSS ── */}
           <main className="flex-1 min-h-0 overflow-auto pb-14">
             {tabOrder.map((id) => {
-              const fixed = FIXED_TABS.find((t) => t.id === id)
-              const custom = customTabs.find((t) => t.id === id)
-              if (!fixed && !custom) return null
-              const tabLabel = fixedTabLabels[id] || fixed?.label || custom?.label || id
+              const fixed   = FIXED_TABS.find((t) => t.id === id)
+              const custom  = customTabs.find((t) => t.id === id)
+              const airflow = airflowTabs.find((t) => t.id === id)
+              if (!fixed && !custom && !airflow) return null
+              const tabLabel = fixedTabLabels[id] || fixed?.label || custom?.label || airflow?.label || id
               return (
-                <div key={id} style={id === activeTabId ? undefined : { display: 'none' }}>
-                  <TabContent tabId={id} tabLabel={tabLabel} registerCb={(fn) => registerAddWidget(id, fn)} />
+                <div key={id} className="h-full" style={id === activeTabId ? undefined : { display: 'none' }}>
+                  <TabContent
+                    tabId={id}
+                    tabLabel={tabLabel}
+                    registerCb={(fn) => registerAddWidget(id, fn)}
+                    airflowTabs={airflowTabs}
+                    onOpenDagTab={openAirflowDagTab}
+                    onOpenSqlTab={openAirflowSqlTab}
+                  />
                 </div>
               )
             })}
           </main>
 
           {/* ── Floating chat panel ──────────────────────────────────────── */}
-          <ChatPanel onAddWidget={handleChatAddWidget} />
+          <ChatPanel
+            onAddWidget={handleChatAddWidget}
+            onRegisterInject={(fn) => { _injectSqlToChat = fn }}
+          />
         </div>
         </WidgetTransferProvider>
       </AuthProvider>

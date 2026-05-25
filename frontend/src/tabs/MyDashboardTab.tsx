@@ -30,7 +30,7 @@ interface Props {
   onRegisterAddWidget?: (fn: (widget: Widget) => void) => void
 }
 
-export function AIDashboardTab({ tabId = 'ai', tabLabel, onRegisterAddWidget }: Props) {
+export function MyDashboardTab({ tabId = 'ai', tabLabel, onRegisterAddWidget }: Props) {
   const saved = loadState(tabId)
   const [widgets,    setWidgets]    = useState<Widget[]>(saved.widgets)
   const [customKpis, setCustomKpis] = useState<CustomKpi[]>(saved.customKpis)
@@ -56,12 +56,12 @@ export function AIDashboardTab({ tabId = 'ai', tabLabel, onRegisterAddWidget }: 
     ),
   )
 
-  const eligibleWidgets = widgets.filter(w => w.sql?.trim() && w.chart_type !== 'kpi')
+  const eligibleWidgets = widgets.filter(w => (w.sql?.trim() || w.chart_type === 'airflow_dags') && w.chart_type !== 'kpi')
   const anyLive = eligibleWidgets.some(w => w.live)
 
   function setAllLive(flag: boolean) {
     setWidgets(prev => prev.map(w =>
-      w.sql?.trim() && w.chart_type !== 'kpi' ? { ...w, live: flag } : w
+      (w.sql?.trim() || w.chart_type === 'airflow_dags') && w.chart_type !== 'kpi' ? { ...w, live: flag } : w
     ))
   }
 

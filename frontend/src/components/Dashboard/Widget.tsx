@@ -1,11 +1,15 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Star, ChevronDown, ChevronUp, Maximize2, Code2, Sparkles, Loader2, Pencil, CornerUpRight, CopyPlus, Wifi, WifiOff } from 'lucide-react'
+import { X, Star, ChevronDown, ChevronUp, Maximize2, Code2, Sparkles, Loader2, Pencil, CornerUpRight, CopyPlus, Wifi, WifiOff, RefreshCw } from 'lucide-react'
 import { ChartRenderer } from '../Charts/ChartRenderer'
 import { DataTable } from '../DataTable/DataTable'
 import { refineWidget } from '../../api/query'
 import { useWidgetTransfer } from '../../context/WidgetTransferContext'
+import { useTabTheme } from '../../context/TabThemeContext'
+import AirflowSection from '../Airflow/AirflowSection'
+import { LiveBadge } from '../common/LiveBadge'
 import type { Widget as WidgetType } from '../../types'
+import type { LiveStatus } from '../../hooks/useLiveStream'
 
 const TYPE_STYLE: Record<string, { border: string; badge: string }> = {
   bar:            { border: 'border-l-blue-400',    badge: 'bg-blue-50 text-blue-700' },
@@ -17,6 +21,7 @@ const TYPE_STYLE: Record<string, { border: string; badge: string }> = {
   kpi:            { border: 'border-l-sky-400',     badge: 'bg-sky-50 text-sky-700' },
   combo:          { border: 'border-l-teal-400',    badge: 'bg-teal-50 text-teal-700' },
   horizontal_bar: { border: 'border-l-cyan-400',    badge: 'bg-cyan-50 text-cyan-700' },
+  airflow_dags:   { border: 'border-l-sky-500',     badge: 'bg-sky-50 text-sky-700' },
 }
 const FALLBACK = { border: 'border-l-slate-300', badge: 'bg-slate-100 text-slate-600' }
 
@@ -42,6 +47,31 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
   const [copied, setCopied] = useState(false)
   const style = TYPE_STYLE[widget.chart_type] ?? FALLBACK
   const hasSql = !!widget.sql?.trim()
+  const isAirflow = widget.chart_type === 'airflow_dags'
+  const { headerBg: ctxHeaderBg, headerBorder: ctxHeaderBorder, airflowEnv: ctxAirflowEnv } = useTabTheme()
+  // Prefer widget-locked values (set at copy/move time) over live context
+  const headerBg     = widget.lockedHeaderBg     ?? ctxHeaderBg
+  const headerBorder = widget.lockedHeaderBorder  ?? ctxHeaderBorder
+
+  // Build widget with theme locked for transfer to another tab
+  function withLockedTheme(w: WidgetType): WidgetType {
+    return {
+      ...w,
+      lockedHeaderBg:    w.lockedHeaderBg    ?? ctxHeaderBg,
+      lockedHeaderBorder: w.lockedHeaderBorder ?? ctxHeaderBorder,
+      ...(isAirflow && { lockedAirflowEnv: w.lockedAirflowEnv ?? ctxAirflowEnv }),
+    }
+  }
+  // Clear locks when returning home (context supplies correct colors again)
+  function withClearedTheme(w: WidgetType): WidgetType {
+    return { ...w, lockedHeaderBg: undefined, lockedHeaderBorder: undefined, lockedAirflowEnv: undefined }
+  }
+
+  // Airflow widget controls — live state reported up from AirflowSection
+  const [airflowLiveStatus, setAirflowLiveStatus] = useState<LiveStatus>('off')
+  const airflowRefreshRef = useRef<(() => void) | null>(null)
+  const handleAirflowLiveStatus = useCallback((s: LiveStatus) => setAirflowLiveStatus(s), [])
+  const handleRegisterRefresh = useCallback((fn: () => void) => { airflowRefreshRef.current = fn }, [])
 
   // Inline title rename
   const [editingTitle, setEditingTitle] = useState(false)
@@ -57,7 +87,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
   const { targets, sendToTab, copyToTab, currentTabId } = useWidgetTransfer()
   const isAwayFromHome = !!(widget.homeTabId && widget.homeTabId !== currentTabId)
   function handleRemove() {
-    if (isAwayFromHome) sendToTab(widget, widget.homeTabId!)
+    if (isAwayFromHome) sendToTab(withClearedTheme(widget), widget.homeTabId!)
     onRemove(widget.id)
   }
   const [showSendMenu, setShowSendMenu] = useState(false)
@@ -106,7 +136,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
   }
 
   function handleCopyToTab(tabId: string, tabLabel: string) {
-    copyToTab(widget, tabId)
+    copyToTab(withLockedTheme(widget), tabId)
     setShowCopyMenu(false)
     setCopiedTo(tabLabel)
     setTimeout(() => setCopiedTo(null), 1800)
@@ -156,7 +186,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
   return (
     <div className="h-full flex flex-col bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden">
       {/* Header */}
-      <div className={`drag-handle flex items-center justify-between px-4 py-2.5 bg-white border-b border-gray-100 border-l-4 ${style.border} cursor-grab active:cursor-grabbing select-none flex-shrink-0`}>
+      <div className={`drag-handle flex items-center justify-between px-4 py-2.5 ${headerBg} border-b ${headerBorder} border-l-4 ${style.border} cursor-grab active:cursor-grabbing select-none flex-shrink-0`}>
         <div className="flex items-center gap-2 min-w-0">
           <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide flex-shrink-0 ${style.badge}`}>
             {widget.chart_type.replace(/_/g, ' ')}
@@ -206,7 +236,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
                     <button
                       key={t.id}
                       onMouseDown={noDrag}
-                      onClick={() => { sendToTab(widget, t.id); onRemove(widget.id); setShowSendMenu(false) }}
+                      onClick={() => { sendToTab(withLockedTheme(widget), t.id); onRemove(widget.id); setShowSendMenu(false) }}
                       className="w-full text-left text-xs text-gray-700 hover:bg-brand-50 hover:text-brand-700 px-3 py-1.5 transition-colors"
                     >
                       {t.label}
@@ -249,35 +279,41 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             </>
           )}
 
-          <button
-            title={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
-            onMouseDown={noDrag}
-            onClick={onFavoriteToggle}
-            disabled={isFavoritePending}
-            className={`p-1.5 transition-colors rounded disabled:opacity-60 ${isFavorited ? 'text-red-500 hover:text-red-600' : 'text-slate-400 hover:text-red-400'}`}
-          >
-            {isFavoritePending
-              ? <Loader2 size={13} className="animate-spin text-slate-400" />
-              : <Star size={13} fill={isFavorited ? 'currentColor' : 'none'} />}
-          </button>
+          {!isAirflow && (
+            <button
+              title={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
+              onMouseDown={noDrag}
+              onClick={onFavoriteToggle}
+              disabled={isFavoritePending}
+              className={`p-1.5 transition-colors rounded disabled:opacity-60 ${isFavorited ? 'text-red-500 hover:text-red-600' : 'text-slate-400 hover:text-red-400'}`}
+            >
+              {isFavoritePending
+                ? <Loader2 size={13} className="animate-spin text-slate-400" />
+                : <Star size={13} fill={isFavorited ? 'currentColor' : 'none'} />}
+            </button>
+          )}
 
-          <button
-            title={showData ? 'Show chart' : 'Show raw data'}
-            onMouseDown={noDrag}
-            onClick={() => { setShowData((s) => !s); setShowSql(false) }}
-            className={`p-1.5 transition-colors rounded ${showData ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:text-blue-500'}`}
-          >
-            <Maximize2 size={13} />
-          </button>
+          {!isAirflow && (
+            <button
+              title={showData ? 'Show chart' : 'Show raw data'}
+              onMouseDown={noDrag}
+              onClick={() => { setShowData((s) => !s); setShowSql(false) }}
+              className={`p-1.5 transition-colors rounded ${showData ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:text-blue-500'}`}
+            >
+              <Maximize2 size={13} />
+            </button>
+          )}
 
-          <button
-            title={showSql ? 'Hide SQL' : 'View / refine SQL'}
-            onMouseDown={noDrag}
-            onClick={() => { setShowSql((s) => !s); setShowData(false); setRefineError(null) }}
-            className={`p-1.5 transition-colors rounded ${showSql ? 'text-violet-600 bg-violet-50' : 'text-slate-400 hover:text-violet-500'}`}
-          >
-            <Code2 size={13} />
-          </button>
+          {!isAirflow && (
+            <button
+              title={showSql ? 'Hide SQL' : 'View / refine SQL'}
+              onMouseDown={noDrag}
+              onClick={() => { setShowSql((s) => !s); setShowData(false); setRefineError(null) }}
+              className={`p-1.5 transition-colors rounded ${showSql ? 'text-violet-600 bg-violet-50' : 'text-slate-400 hover:text-violet-500'}`}
+            >
+              <Code2 size={13} />
+            </button>
+          )}
 
           {hasSql && widget.chart_type !== 'kpi' && (
             <button
@@ -288,6 +324,28 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             >
               {widget.live ? <WifiOff size={13} /> : <Wifi size={13} />}
             </button>
+          )}
+
+          {isAirflow && (
+            <>
+              {airflowLiveStatus !== 'off' && <LiveBadge status={airflowLiveStatus} />}
+              <button
+                title={widget.live ? 'Stop live updates' : 'Start live updates'}
+                onMouseDown={noDrag}
+                onClick={() => onUpdate?.({ ...widget, live: !widget.live })}
+                className={`p-1.5 transition-colors rounded ${widget.live ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100' : 'text-slate-400 hover:text-emerald-500'}`}
+              >
+                {widget.live ? <WifiOff size={13} /> : <Wifi size={13} />}
+              </button>
+              <button
+                title="Refresh DAG status"
+                onMouseDown={noDrag}
+                onClick={() => airflowRefreshRef.current?.()}
+                className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors rounded"
+              >
+                <RefreshCw size={13} />
+              </button>
+            </>
           )}
 
           <button
@@ -313,13 +371,24 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
       {/* Body — hidden when collapsed (widget physically shrinks via layout h change) */}
       {!isCollapsed && (
         <>
-          {widget.ai_description && (
+          {widget.ai_description && !isAirflow && (
             <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex-shrink-0">
               <p className="text-[11px] text-slate-500 leading-relaxed">{widget.ai_description}</p>
             </div>
           )}
 
-          {!showSql && (
+          {isAirflow && (
+            <div className="flex-1 overflow-auto min-h-0 p-3">
+              <AirflowSection
+                live={widget.live ?? false}
+                onLiveStatusChange={handleAirflowLiveStatus}
+                onRegisterRefresh={handleRegisterRefresh}
+                airflowEnvOverride={widget.lockedAirflowEnv}
+              />
+            </div>
+          )}
+
+          {!isAirflow && !showSql && (
             <div className="flex-1 overflow-auto p-3 min-h-0">
               {showData ? (
                 <DataTable data={widget.data} />
@@ -340,7 +409,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
           )}
 
           {/* SQL panel */}
-          {showSql && (
+          {!isAirflow && showSql && (
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden border-t border-violet-100">
               <div className="flex items-center justify-between px-3 py-1.5 bg-violet-50 border-b border-violet-100 flex-shrink-0">
                 <span className="text-[10px] font-semibold text-violet-700 uppercase tracking-wide">SQL Query</span>

@@ -15,6 +15,7 @@ interface InternalMessage {
 
 interface Props {
   onAddWidget?: (widget: ChatWidgetDef) => void
+  onRegisterInject?: (fn: (sql: string) => void) => void
 }
 
 let _mid = 0
@@ -65,7 +66,7 @@ interface SpeechRecognitionAlternative {
   transcript: string
 }
 
-export function ChatPanel({ onAddWidget }: Props) {
+export function ChatPanel({ onAddWidget, onRegisterInject }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [messages, setMessages] = useState<InternalMessage[]>([
     { id: mid(), role: 'assistant', text: "Hi! I'm your AI analyst. Ask me anything about your workforce and spend data — I can answer questions, explain metrics, or generate charts." },
@@ -77,6 +78,16 @@ export function ChatPanel({ onAddWidget }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const recognitionRef = useRef<SpeechRecognition | null>(null)
+
+  // Register SQL injection handler so SqlTab can pre-fill the chat
+  useEffect(() => {
+    onRegisterInject?.((sql: string) => {
+      const prompt = `Analyze this SQL query and explain what it does, identify any potential issues, and suggest optimizations:\n\`\`\`sql\n${sql}\n\`\`\``
+      setInput(prompt)
+      setExpanded(true)
+      setTimeout(() => inputRef.current?.focus(), 150)
+    })
+  }, [onRegisterInject])
 
   useEffect(() => {
     fetch('/api/health')

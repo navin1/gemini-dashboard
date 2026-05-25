@@ -11,9 +11,10 @@ import { fetchVendorScorecard } from '../api/scorecard'
 import { createFavorite } from '../api/favorites'
 import { exportPDF } from '../api/pdf'
 import type { Widget, GridLayout, ScorecardVendor, CustomKpi } from '../types'
+import { TabThemeContext } from '../context/TabThemeContext'
 
 const STORAGE_KEY = 'gd_ws_vendor'
-const SEED_IDS = ['vendor_tier_breakdown', 'vendor_offshore', 'vendor_billtype_bar', 'vendor_table', 'vendor_spend_by_tier', 'vendor_monthly', 'vendor_cap_exp_ftp', 'vendor_resource_count']
+const SEED_IDS = ['vendor_tier_breakdown', 'vendor_offshore', 'vendor_billtype_bar', 'vendor_table', 'vendor_spend_by_tier', 'vendor_monthly', 'vendor_cap_exp_ftp', 'vendor_resource_count', 'vendor_airflow_dags']
 
 function loadState(): { widgets: Widget[]; customKpis: CustomKpi[] } {
   try {
@@ -92,19 +93,32 @@ function makeSeeds(data: ScorecardVendor): Widget[] {
       layout: { i: 'vendor_tier_breakdown', x: 0, y: 21, w: 4, h: 8 },
     },
     {
-      id: 'vendor_table', title: 'Vendor Summary',
+      id: 'vendor_table', title: 'PRD Dashboard',
       chart_type: 'table', x_axis: undefined, y_axis: [],
       stacked: false, dual_axis: false,
       ai_description: 'Vendor breakdown including FTP, offshore/onshore ratio, TM %, fixed fee %, capital %, and committed spend.',
       sql: sql(data, 'vendor_table'), data: data.vendor_table,
       layout: { i: 'vendor_table', x: 4, y: 16, w: 8, h: 14 },
     },
+    {
+      id: 'vendor_airflow_dags', title: 'Airflow DAGs',
+      chart_type: 'airflow_dags', x_axis: undefined, y_axis: [],
+      stacked: false, dual_axis: false,
+      ai_description: '',
+      sql: '', data: [],
+      layout: { i: 'vendor_airflow_dags', x: 0, y: 30, w: 12, h: 9, minH: 6 },
+    },
   ]
 }
 
-interface Props { tabLabel?: string; onRegisterAddWidget?: (fn: (w: Widget) => void) => void }
+interface Props {
+  tabLabel?: string
+  onRegisterAddWidget?: (fn: (w: Widget) => void) => void
+  onOpenDagTab: (dagId: string, env: string) => void
+}
 
-export function VendorSummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
+export function PRDDashboardTab({ tabLabel, onRegisterAddWidget, onOpenDagTab }: Props) {
+  const tabTheme = { headerBg: 'bg-red-50', headerBorder: 'border-red-100', airflowEnv: 'PROD', tabPrefix: 'PRD', onOpenDagTab }
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['scorecard', 'vendor'],
     queryFn: fetchVendorScorecard,
@@ -130,12 +144,12 @@ export function VendorSummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
     (id, freshData) => setWidgets(prev => prev.map(w => w.id === id ? { ...w, data: freshData } : w)),
   )
 
-  const eligibleWidgets = widgets.filter(w => w.sql?.trim() && w.chart_type !== 'kpi')
+  const eligibleWidgets = widgets.filter(w => (w.sql?.trim() || w.chart_type === 'airflow_dags') && w.chart_type !== 'kpi')
   const anyLive = eligibleWidgets.some(w => w.live)
 
   function setAllLive(flag: boolean) {
     setWidgets(prev => prev.map(w =>
-      w.sql?.trim() && w.chart_type !== 'kpi' ? { ...w, live: flag } : w
+      (w.sql?.trim() || w.chart_type === 'airflow_dags') && w.chart_type !== 'kpi' ? { ...w, live: flag } : w
     ))
   }
 
@@ -191,11 +205,11 @@ export function VendorSummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
   async function handleExport() {
     if (!widgets.length) return
     setExporting(true)
-    try { await exportPDF(tabLabel ?? 'Vendor Summary Scorecard', tabLabel ?? 'Vendor Summary', widgets) }
+    try { await exportPDF(tabLabel ?? 'PRD Dashboard', tabLabel ?? 'PRD Dashboard', widgets) }
     finally { setExporting(false) }
   }
 
-  if (isLoading && !widgets.length) return <LoadingOverlay label="Loading Vendor Summary…" />
+  if (isLoading && !widgets.length) return <LoadingOverlay label="Loading PRD Dashboard…" />
   if (isError) return (
     <div className="p-8 text-center">
       <p className="text-red-600 font-medium mb-3">Failed to load vendor data</p>
@@ -206,6 +220,7 @@ export function VendorSummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
   const kpi = data?.vendor_kpis?.[0] as Record<string, number> | undefined
 
   return (
+    <TabThemeContext.Provider value={tabTheme}>
     <div className="flex flex-col gap-4 p-4">
       <div className="flex items-center gap-3 flex-wrap">
         {kpi && (
@@ -245,5 +260,6 @@ export function VendorSummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
         <DashboardGrid widgets={widgets} onRemove={removeWidget} onSaveFavorite={saveFavorite} onLayoutChange={handleLayoutChange} onUpdate={updateWidget} />
       </div>
     </div>
+    </TabThemeContext.Provider>
   )
 }

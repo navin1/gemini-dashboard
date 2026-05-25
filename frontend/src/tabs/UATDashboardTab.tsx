@@ -11,9 +11,10 @@ import { fetchFTEScorecard } from '../api/scorecard'
 import { createFavorite } from '../api/favorites'
 import { exportPDF } from '../api/pdf'
 import type { Widget, GridLayout, KPIData, ScorecardFTE, CustomKpi } from '../types'
+import { TabThemeContext } from '../context/TabThemeContext'
 
 const STORAGE_KEY = 'gd_ws_fte'
-const SEED_IDS = ['fte_spend_class', 'fte_capital_combo', 'fte_expense_combo', 'fte_table', 'fte_donut', 'fte_cap_exp_ftp']
+const SEED_IDS = ['fte_spend_class', 'fte_capital_combo', 'fte_expense_combo', 'fte_table', 'fte_donut', 'fte_cap_exp_ftp', 'fte_airflow_dags']
 
 function loadState(): { widgets: Widget[]; customKpis: CustomKpi[] } {
   try {
@@ -62,7 +63,7 @@ function makeSeeds(data: ScorecardFTE): Widget[] {
       layout: { i: 'fte_expense_combo', x: 0, y: 16, w: 4, h: 5 },
     },
     {
-      id: 'fte_table', title: 'FTE Hierarchy Summary',
+      id: 'fte_table', title: 'UAT Dashboard',
       chart_type: 'table', x_axis: undefined, y_axis: [],
       stacked: false, dual_axis: false,
       ai_description: 'Hierarchy breakdown of headcount, FTE, capital %, and spend by resource VP and manager.',
@@ -85,12 +86,25 @@ function makeSeeds(data: ScorecardFTE): Widget[] {
       sql: sql(data, 'monthly_cap_exp_ftp', 'fte_cap_exp_ftp'), data: data.monthly_cap_exp_ftp,
       layout: { i: 'fte_cap_exp_ftp', x: 0, y: 24, w: 4, h: 5 },
     },
+    {
+      id: 'fte_airflow_dags', title: 'Airflow DAGs',
+      chart_type: 'airflow_dags', x_axis: undefined, y_axis: [],
+      stacked: false, dual_axis: false,
+      ai_description: '',
+      sql: '', data: [],
+      layout: { i: 'fte_airflow_dags', x: 0, y: 30, w: 12, h: 9, minH: 6 },
+    },
   ]
 }
 
-interface Props { tabLabel?: string; onRegisterAddWidget?: (fn: (w: Widget) => void) => void }
+interface Props {
+  tabLabel?: string
+  onRegisterAddWidget?: (fn: (w: Widget) => void) => void
+  onOpenDagTab: (dagId: string, env: string) => void
+}
 
-export function FTEHierarchyTab({ tabLabel, onRegisterAddWidget }: Props) {
+export function UATDashboardTab({ tabLabel, onRegisterAddWidget, onOpenDagTab }: Props) {
+  const tabTheme = { headerBg: 'bg-orange-50', headerBorder: 'border-orange-100', airflowEnv: 'UAT', tabPrefix: 'UAT', onOpenDagTab }
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['scorecard', 'fte'],
     queryFn: fetchFTEScorecard,
@@ -117,12 +131,12 @@ export function FTEHierarchyTab({ tabLabel, onRegisterAddWidget }: Props) {
     (id, freshData) => setWidgets(prev => prev.map(w => w.id === id ? { ...w, data: freshData } : w)),
   )
 
-  const eligibleWidgets = widgets.filter(w => w.sql?.trim() && w.chart_type !== 'kpi')
+  const eligibleWidgets = widgets.filter(w => (w.sql?.trim() || w.chart_type === 'airflow_dags') && w.chart_type !== 'kpi')
   const anyLive = eligibleWidgets.some(w => w.live)
 
   function setAllLive(flag: boolean) {
     setWidgets(prev => prev.map(w =>
-      w.sql?.trim() && w.chart_type !== 'kpi' ? { ...w, live: flag } : w
+      (w.sql?.trim() || w.chart_type === 'airflow_dags') && w.chart_type !== 'kpi' ? { ...w, live: flag } : w
     ))
   }
 
@@ -179,13 +193,13 @@ export function FTEHierarchyTab({ tabLabel, onRegisterAddWidget }: Props) {
   async function handleExport() {
     if (!widgets.length) return
     setExporting(true)
-    try { await exportPDF(tabLabel ?? 'FTE Hierarchy Scorecard', tabLabel ?? 'FTE Hierarchy', widgets) }
+    try { await exportPDF(tabLabel ?? 'UAT Dashboard', tabLabel ?? 'UAT Dashboard', widgets) }
     finally { setExporting(false) }
   }
 
   const kpi = data?.kpi?.[0] as KPIData | undefined
 
-  if (isLoading && !widgets.length) return <LoadingOverlay label="Loading FTE Hierarchy Scorecard…" />
+  if (isLoading && !widgets.length) return <LoadingOverlay label="Loading UAT Dashboard…" />
   if (isError) return (
     <div className="p-8 text-center">
       <p className="text-red-600 font-medium mb-3">Failed to load scorecard data</p>
@@ -194,6 +208,7 @@ export function FTEHierarchyTab({ tabLabel, onRegisterAddWidget }: Props) {
   )
 
   return (
+    <TabThemeContext.Provider value={tabTheme}>
     <div className="flex flex-col gap-4 p-4">
       {(kpi || customKpis.length > 0 || widgets.length > 0) && (
         <div className="flex items-center gap-3 flex-wrap">
@@ -233,5 +248,6 @@ export function FTEHierarchyTab({ tabLabel, onRegisterAddWidget }: Props) {
         <DashboardGrid widgets={widgets} onRemove={removeWidget} onSaveFavorite={saveFavorite} onLayoutChange={handleLayoutChange} onUpdate={updateWidget} />
       </div>
     </div>
+    </TabThemeContext.Provider>
   )
 }

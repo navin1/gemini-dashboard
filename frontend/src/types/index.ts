@@ -15,6 +15,9 @@ export interface Widget {
   live?: boolean          // true = this widget streams live updates
   prevH?: number          // stored when widget is collapsed so height can be restored
   homeTabId?: string      // set when widget is moved away from its origin tab
+  lockedHeaderBg?: string      // header bg color locked at copy/move time
+  lockedHeaderBorder?: string  // header border color locked at copy/move time
+  lockedAirflowEnv?: string    // airflow env locked at copy/move time (airflow_dags only)
   // react-grid-layout position
   layout?: GridLayout
 }
@@ -29,6 +32,7 @@ export type ChartType =
   | 'table'
   | 'kpi'
   | 'horizontal_bar'
+  | 'airflow_dags'
 
 export interface GridLayout {
   i: string
@@ -78,6 +82,67 @@ export interface CustomKpi {
   id: string
   label: string
   value: number
+}
+
+// ── Airflow / Composer types ──────────────────────────────────────────────────
+
+export type AirflowTaskState =
+  | 'success' | 'failed' | 'running' | 'queued'
+  | 'up_for_retry' | 'skipped' | 'upstream_failed'
+  | 'deferred' | 'removed' | null
+
+export interface AirflowEnv {
+  name: string
+  url: string
+}
+
+export interface AirflowTask {
+  task_id: string
+  operator: string
+  downstream_task_ids: string[]
+  state?: AirflowTaskState
+  duration_seconds?: number
+}
+
+export interface AirflowRun {
+  run_id: string
+  state: string
+  execution_date: string
+  start_date: string | null
+  end_date: string | null
+}
+
+export interface DagStatus {
+  dag_id: string
+  state: string | null
+  last_run_time: string | null
+  error?: string
+}
+
+export interface TaskSqlResult {
+  sql: string | null
+  source: 'rendered' | 'raw' | 'none'
+  truncated: boolean
+}
+
+export interface TaskNodeData extends Record<string, unknown> {
+  taskId: string
+  operatorFull: string
+  operatorShort: string
+  state: AirflowTaskState
+  durationSeconds?: number
+  isActiveRun?: boolean
+}
+
+export interface AirflowTab {
+  id: string
+  label: string
+  type: 'airflow_dag' | 'airflow_sql'
+  dagId: string
+  env: string
+  runId?: string
+  taskId?: string
+  operatorFull?: string
 }
 
 export interface KPIData {
