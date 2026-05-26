@@ -5,7 +5,7 @@ import logging
 import google.auth
 import google.auth.transport.requests
 import vertexai
-from vertexai.generative_models import GenerativeModel, Content, Part
+from vertexai.generative_models import GenerativeModel, Content, Part, Tool, FunctionDeclaration
 
 import bigquery_client
 from dotenv import load_dotenv
@@ -343,6 +343,148 @@ def refine_widget(current_sql: str, nl_modification: str, glossary_terms: list[d
         f"the modification clearly requires different visualisation settings."
     )
     response = _model.generate_content(prompt)
+    return _parse_json(response.text)
+
+
+_BQ_TOOL = Tool(function_declarations=[
+    FunctionDeclaration(
+        name="run_bigquery_query",
+        description=(
+            "Execute a BigQuery SQL query and return the results. "
+            "Use this to explore the data, verify column names, answer questions with live data, "
+            "or build up complex answers step-by-step."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "sql": {
+                    "type": "string",
+                    "description": (
+                        "Valid BigQuery Standard SQL using fully-qualified table names. "
+                        "No trailing semicolons. Use SAFE_DIVIDE for division."
+                    ),
+                }
+            },
+            "required": ["sql"],
+        },
+    )
+])
+
+
+def _build_agent_system() -> str:
+    schema = _get_schema()
+    tables_clause = _table_refs_clause()
+    return f"""You are an expert AI analyst for a workforce and spend management dashboard. You have direct access to BigQuery via the run_bigquery_query tool.
+
+{schema}
+
+BigQuery rules (apply to every SQL you write):
+- Only query the tables listed above. Never reference tables not shown in the schema.
+- Use exact full table reference(s): {tables_clause}
+- Use SAFE_DIVIDE(a, b) for division; NULLIF(col, 0) where needed
+- Limit to 50 rows unless asked otherwise
+- For period time-series: UNION ALL each period into (month_label, category, value) rows
+- Valid BigQuery Standard SQL only (no trailing semicolons)
+
+Behaviour:
+- Always call run_bigquery_query to fetch real data before answering. Never hallucinate results.
+- You may call the tool multiple times in one turn — explore first, then refine, then summarise.
+- When the user asks to visualise data, include a widget in your final JSON response.
+- Always maintain context from conversation history.
+
+You MUST end every turn with a single raw JSON object (no markdown, no prose outside the JSON):
+{{
+  "text": "Your conversational reply. Explain what you found, answer the question, or confirm the chart. 2-5 sentences.",
+  "intent": "explain | chart | both",
+  "widget": {{
+    "sql": "SELECT ...",
+    "chart_type": "bar|stacked_bar|line|combo|donut|pie|table|kpi|horizontal_bar",
+    "title": "Short chart title",
+    "x_axis": "column_name_or_null",
+    "y_axis": ["column_name"],
+    "color_field": "column_name_or_null",
+    "stacked": false,
+    "dual_axis": false,
+    "secondary_y": "column_name_or_null",
+    "ai_description": "1-2 sentence insight for the chart."
+  }},
+  "suggested_questions": ["Follow-up question 1?", "Follow-up question 2?", "Follow-up question 3?"]
+}}
+
+Rules:
+- intent="explain" → no widget needed (omit the widget field).
+- intent="chart" → always include widget with working SQL.
+- intent="both" → include both text explanation and widget.
+- Always include exactly 2-3 suggested_questions grounded in the data you just found.
+- If a query errors, try an alternative SQL approach before giving up.
+"""
+
+
+def agent_chat(
+    message: str,
+    history: list[dict],
+    glossary_terms: list[dict] | None = None,
+    token: str | None = None,
+    max_tool_calls: int = 10,
+) -> dict:
+    _require_model()
+
+    glossary_ctx = ""
+    if glossary_terms:
+        lines = "\n".join(f"  {t['term']} → {t['definition']}" for t in glossary_terms)
+        glossary_ctx = (
+            f"\n\nUser-defined aliases (treat each term as its mapped value in all contexts — "
+            f"table names, column names, abbreviations):\n{lines}"
+        )
+
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    agent_model = GenerativeModel(
+        model_name,
+        tools=[_BQ_TOOL],
+        system_instruction=_build_agent_system(),
+    )
+
+    vertex_history = [
+        Content(
+            role="user" if msg["role"] == "user" else "model",
+            parts=[Part.from_text(msg["content"])],
+        )
+        for msg in history
+    ]
+
+    chat = agent_model.start_chat(history=vertex_history)
+    user_prompt = f"{glossary_ctx}\n\nUser: {message}" if glossary_ctx else f"User: {message}"
+    response = chat.send_message(user_prompt)
+
+    for _ in range(max_tool_calls):
+        parts = response.candidates[0].content.parts
+        fc_parts = [p for p in parts if hasattr(p, "function_call") and p.function_call.name]
+        if not fc_parts:
+            break
+
+        fn_responses = []
+        for p in fc_parts:
+            fc = p.function_call
+            sql = fc.args.get("sql", "")
+            logger.info(f"Agent tool call: run_bigquery_query sql={sql[:120]!r}…")
+            try:
+                results = bigquery_client.run_query(sql, token)
+                resp_data = {
+                    "status": "success",
+                    "row_count": len(results),
+                    "data": results[:50],
+                }
+                logger.info(f"Agent tool result: {len(results)} rows")
+            except Exception as exc:
+                resp_data = {"status": "error", "error": str(exc)}
+                logger.warning(f"Agent tool error: {exc}")
+
+            fn_responses.append(
+                Part.from_function_response(name=fc.name, response=resp_data)
+            )
+
+        response = chat.send_message(fn_responses)
+
     return _parse_json(response.text)
 
 
