@@ -76,41 +76,59 @@ def _resolve_url(env_name: str) -> str:
 
 async def _airflow_headers(token: Optional[str], audience: Optional[str] = None) -> dict[str, str]:
     """
-    Build Authorization headers for Airflow API calls.
+    Build Authorization headers for Airflow / Cloud Composer IAP calls.
 
     Priority:
-      1. User Bearer token from the request — used as-is (works for IAP).
-      2. ADC/service-account OIDC token — Cloud Composer IAP requires an OIDC
-         identity token (not a plain access token). fetch_id_token() produces the
-         correct token type when the audience is the Composer base URL.
+      1. Explicit Bearer token (GOOGLE_OAUTH_TOKEN env var or forwarded from frontend).
+      2. Service-account OIDC via google-auth (GOOGLE_APPLICATION_CREDENTIALS=service_account.json).
+      3. gcloud CLI fallback — works for user accounts; no service account required.
     """
     if token:
+        logger.debug("Airflow auth: using explicit Bearer token")
         return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
+    # ── Attempt 1: google-auth fetch_id_token ────────────────────────────────
+    # Works when GOOGLE_APPLICATION_CREDENTIALS points to a service_account JSON.
+    # Fails silently for authorized_user credentials (from gcloud ADC login).
     try:
         import google.auth.transport.requests as ga_requests
         import google.oauth2.id_token
 
-        # Cloud Composer IAP needs an OIDC ID token, NOT a cloud-platform access token.
-        # The audience must be the Composer web server URL (no trailing path).
-        iap_audience = audience or ""
         auth_req = ga_requests.Request()
-        oidc_token = google.oauth2.id_token.fetch_id_token(auth_req, iap_audience)
-        logger.debug(f"ADC OIDC token obtained for audience={iap_audience}")
-        return {
-            "Authorization": f"Bearer {oidc_token}",
-            "Content-Type": "application/json",
-        }
-    except Exception as exc:
-        raise HTTPException(
-            status_code=401,
-            detail=(
-                f"No valid credentials for Airflow IAP. "
-                f"Set GOOGLE_OAUTH_TOKEN in .env (run: gcloud auth print-identity-token) "
-                f"or configure GOOGLE_APPLICATION_CREDENTIALS with a service account that "
-                f"has IAP access. ({type(exc).__name__}: {exc})"
-            ),
-        )
+        oidc_token = google.oauth2.id_token.fetch_id_token(auth_req, audience or "")
+        logger.debug(f"Airflow auth: service-account OIDC token (audience={audience})")
+        return {"Authorization": f"Bearer {oidc_token}", "Content-Type": "application/json"}
+    except Exception as sa_exc:
+        logger.debug(f"Airflow auth: fetch_id_token failed ({type(sa_exc).__name__}: {sa_exc}), trying gcloud…")
+
+    # ── Attempt 2: gcloud auth print-identity-token ──────────────────────────
+    # Works for any user authenticated via `gcloud auth login` or
+    # `gcloud auth application-default login`. The Composer web server URL is
+    # passed as the IAP audience so IAP accepts the resulting OIDC token.
+    try:
+        import subprocess
+        cmd = ["gcloud", "auth", "print-identity-token"]
+        if audience:
+            cmd.append(f"--audiences={audience}")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        if result.returncode == 0 and result.stdout.strip():
+            logger.debug("Airflow auth: gcloud identity token obtained")
+            return {"Authorization": f"Bearer {result.stdout.strip()}", "Content-Type": "application/json"}
+        logger.warning(f"Airflow auth: gcloud failed (rc={result.returncode}): {result.stderr.strip()}")
+    except FileNotFoundError:
+        logger.debug("Airflow auth: gcloud not found in PATH")
+    except Exception as gcloud_exc:
+        logger.warning(f"Airflow auth: gcloud fallback error: {gcloud_exc}")
+
+    raise HTTPException(
+        status_code=401,
+        detail=(
+            "No valid credentials for Airflow IAP. Fix one of:\n"
+            "  1. Run: gcloud auth login  (easiest for local dev)\n"
+            "  2. Set GOOGLE_OAUTH_TOKEN in .env: gcloud auth print-identity-token\n"
+            "  3. Set GOOGLE_APPLICATION_CREDENTIALS to a service-account JSON with IAP access"
+        ),
+    )
 
 
 # ── Generic proxy helper ───────────────────────────────────────────────────────
