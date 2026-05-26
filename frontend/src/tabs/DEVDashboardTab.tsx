@@ -20,7 +20,12 @@ const SEED_IDS = ['hier_tier_breakdown', 'hier_drill', 'hier_cat_monthly', 'hier
 function loadState(): { widgets: Widget[]; customKpis: CustomKpi[] } {
   try {
     const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
-    return raw ? JSON.parse(raw) : { widgets: [], customKpis: [] }
+    if (!raw) return { widgets: [], customKpis: [] }
+    const parsed = JSON.parse(raw)
+    const widgets = (parsed.widgets ?? []).map((w: Widget) =>
+      w.chart_type === 'airflow_dags' ? { ...w, lockedAirflowEnv: undefined } : w
+    )
+    return { widgets, customKpis: parsed.customKpis ?? [] }
   } catch { return { widgets: [], customKpis: [] } }
 }
 
@@ -87,7 +92,7 @@ interface Props {
 }
 
 export function DEVDashboardTab({ tabLabel, onRegisterAddWidget, onOpenDagTab }: Props) {
-  const tabTheme = { headerBg: 'bg-blue-50', headerBorder: 'border-blue-100', airflowEnv: 'Dev', tabPrefix: 'DEV', onOpenDagTab }
+  const tabTheme = { headerBg: 'bg-blue-100', headerBorder: 'border-blue-100', airflowEnv: 'Dev', tabPrefix: 'DEV', onOpenDagTab }
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['scorecard', 'dev'],
     queryFn: fetchHierarchyScorecard,

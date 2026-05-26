@@ -20,7 +20,12 @@ const SEED_IDS = ['vendor_tier_breakdown', 'vendor_offshore', 'vendor_billtype_b
 function loadState(): { widgets: Widget[]; customKpis: CustomKpi[] } {
   try {
     const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
-    return raw ? JSON.parse(raw) : { widgets: [], customKpis: [] }
+    if (!raw) return { widgets: [], customKpis: [] }
+    const parsed = JSON.parse(raw)
+    const widgets = (parsed.widgets ?? []).map((w: Widget) =>
+      w.chart_type === 'airflow_dags' ? { ...w, lockedAirflowEnv: undefined } : w
+    )
+    return { widgets, customKpis: parsed.customKpis ?? [] }
   } catch { return { widgets: [], customKpis: [] } }
 }
 
@@ -119,7 +124,7 @@ interface Props {
 }
 
 export function PRDDashboardTab({ tabLabel, onRegisterAddWidget, onOpenDagTab }: Props) {
-  const tabTheme = { headerBg: 'bg-green-50', headerBorder: 'border-green-100', airflowEnv: 'PROD', tabPrefix: 'PRD', onOpenDagTab }
+  const tabTheme = { headerBg: 'bg-green-100', headerBorder: 'border-green-100', airflowEnv: 'PRD', tabPrefix: 'PRD', onOpenDagTab }
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['scorecard', 'prd'],
     queryFn: fetchVendorScorecard,

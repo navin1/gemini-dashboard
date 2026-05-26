@@ -28,13 +28,15 @@ qc.prefetchQuery({ queryKey: ['scorecard', 'dev'], queryFn: fetchHierarchyScorec
 
 // ── Fixed tabs (always present, not closeable) ────────────────────────────────
 const FIXED_TABS = [
-  { id: 'uat', label: 'UAT Dashboard', icon: LayoutDashboard, badge: 'Scorecard' },
+  { id: 'my',        label: 'My Dashboard',   icon: Sparkles,        badge: 'Dynamic'   },
   { id: 'prd', label: 'PRD Dashboard', icon: Users,           badge: 'Scorecard' },
+  { id: 'uat', label: 'UAT Dashboard', icon: LayoutDashboard, badge: 'Scorecard' },
   { id: 'dev', label: 'DEV Dashboard', icon: GitBranch,       badge: 'Scorecard' },
-  { id: 'ai',        label: 'My Dashboard',   icon: Sparkles,        badge: 'Dynamic'   },
   { id: 'favorites', label: 'Favorites',      icon: Star,            badge: 'Saved'     },
   { id: 'glossary',  label: 'Glossary',       icon: BookOpen,        badge: 'Reference' },
 ] as const
+
+const TAB_ORDER_VERSION = 3
 
 function envToPrefix(env: string): string {
   const map: Record<string, string> = { UAT: 'UAT', PROD: 'PRD', Dev: 'DEV' }
@@ -66,6 +68,12 @@ const FIXED_IDS = FIXED_TABS.map((t) => t.id)
 function loadTabOrder(customIds: string[]): string[] {
   const allIds = [...FIXED_IDS, ...customIds]
   try {
+    const version = parseInt(localStorage.getItem('tab_order_version') || '1')
+    if (version < TAB_ORDER_VERSION) {
+      localStorage.removeItem('tab_order')
+      localStorage.setItem('tab_order_version', String(TAB_ORDER_VERSION))
+      return allIds
+    }
     const raw: string[] = JSON.parse(localStorage.getItem('tab_order') || '[]')
     // Migrate old tab IDs in stored order
     const migrated = raw.map(id => id === 'fte' ? 'uat' : id === 'vendor' ? 'prd' : id === 'hierarchy' ? 'dev' : id)
@@ -150,7 +158,7 @@ function TabContent({
 
 
 export default function App() {
-  const [activeTabId, setActiveTabId] = useState<string>('ai')
+  const [activeTabId, setActiveTabId] = useState<string>('my')
   const [customTabs, setCustomTabs] = useState<CustomTab[]>(loadCustomTabs)
 
   // Inline rename state
@@ -173,7 +181,8 @@ export default function App() {
     try {
       const stored = JSON.parse(localStorage.getItem('fixed_tab_labels') || '{}')
       // Migrate old default names → new defaults so renames are transparent
-      if (stored['ai'] === 'AI Dashboard' || stored['ai'] === 'My Dashboard') delete stored['ai']
+      if (stored['ai'] !== undefined) { stored['my'] = stored['ai']; delete stored['ai'] }
+      if (stored['my'] === 'AI Dashboard' || stored['my'] === 'My Dashboard') delete stored['my']
       // Migrate old tab IDs (fte→uat, vendor→prd, hierarchy→dev) — move any custom labels across
       for (const [oldId, newId] of [['fte', 'uat'], ['vendor', 'prd'], ['hierarchy', 'dev']] as const) {
         if (stored[oldId] !== undefined) { stored[newId] = stored[oldId]; delete stored[oldId] }
@@ -217,7 +226,7 @@ export default function App() {
     saveCustomTabs(next)
     delete _addWidgetCallbacks[id]
     if (activeTabId === id) {
-      setActiveTabId(next.length > 0 ? next[next.length - 1].id : 'ai')
+      setActiveTabId(next.length > 0 ? next[next.length - 1].id : 'my')
     }
   }
 
@@ -318,7 +327,7 @@ export default function App() {
   // Targets for WidgetTransferProvider: AI tab + all custom tabs
   const transferTargets = useMemo(
     () => [
-      { id: 'ai', label: fixedTabLabels['ai'] || 'My Dashboard' },
+      { id: 'my', label: fixedTabLabels['my'] || 'My Dashboard' },
       ...customTabs.map((t) => ({ id: t.id, label: t.label })),
     ],
     [customTabs, fixedTabLabels]
@@ -344,8 +353,8 @@ export default function App() {
     if (cb) {
       cb(widget)
     } else {
-      _addWidgetCallbacks['ai']?.(widget)
-      setActiveTabId('ai')
+      _addWidgetCallbacks['my']?.(widget)
+      setActiveTabId('my')
     }
   }, [activeTabId])
 

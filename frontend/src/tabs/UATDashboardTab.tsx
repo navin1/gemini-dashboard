@@ -20,7 +20,12 @@ const SEED_IDS = ['fte_spend_class', 'fte_capital_combo', 'fte_expense_combo', '
 function loadState(): { widgets: Widget[]; customKpis: CustomKpi[] } {
   try {
     const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
-    return raw ? JSON.parse(raw) : { widgets: [], customKpis: [] }
+    if (!raw) return { widgets: [], customKpis: [] }
+    const parsed = JSON.parse(raw)
+    const widgets = (parsed.widgets ?? []).map((w: Widget) =>
+      w.chart_type === 'airflow_dags' ? { ...w, lockedAirflowEnv: undefined } : w
+    )
+    return { widgets, customKpis: parsed.customKpis ?? [] }
   } catch { return { widgets: [], customKpis: [] } }
 }
 
@@ -105,7 +110,7 @@ interface Props {
 }
 
 export function UATDashboardTab({ tabLabel, onRegisterAddWidget, onOpenDagTab }: Props) {
-  const tabTheme = { headerBg: 'bg-yellow-50', headerBorder: 'border-yellow-100', airflowEnv: 'UAT', tabPrefix: 'UAT', onOpenDagTab }
+  const tabTheme = { headerBg: 'bg-yellow-100', headerBorder: 'border-yellow-100', airflowEnv: 'UAT', tabPrefix: 'UAT', onOpenDagTab }
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['scorecard', 'uat'],
     queryFn: fetchFTEScorecard,
