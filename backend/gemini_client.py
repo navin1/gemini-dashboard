@@ -1,12 +1,82 @@
 import os
 import json
-import google.generativeai as genai
+import logging
+
+import google.auth
+import google.auth.transport.requests
+import vertexai
+from vertexai.generative_models import GenerativeModel, Content, Part
+
+import bigquery_client
 from dotenv import load_dotenv
 
 load_dotenv()
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY", ""))
-_model = genai.GenerativeModel(os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+logger = logging.getLogger(__name__)
+
+# ── Credential resolution ──────────────────────────────────────────────────────
+# Priority: user ADC (gcloud auth application-default login) → SA JSON fallback.
+# BigQuery and Airflow always use user ADC only — SA fallback is Vertex AI only.
+
+def _get_vertex_credentials():
+    auth_req = google.auth.transport.requests.Request()
+
+    # 1. User's own ADC credentials
+    try:
+        creds, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        creds.refresh(auth_req)
+        logger.info("Vertex AI: using user ADC credentials")
+        return creds
+    except Exception as e:
+        logger.debug(f"Vertex AI: user ADC failed ({type(e).__name__}: {e}), trying SA fallback…")
+
+    # 2. Service-account JSON fallback (Vertex AI only — does not apply to BQ/Airflow)
+    sa_file = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+    if sa_file and os.path.exists(sa_file):
+        try:
+            creds, _ = google.auth.load_credentials_from_file(
+                sa_file,
+                scopes=["https://www.googleapis.com/auth/cloud-platform"],
+            )
+            logger.info("Vertex AI: using service-account fallback credentials")
+            return creds
+        except Exception as e:
+            logger.warning(f"Vertex AI: SA fallback failed ({type(e).__name__}: {e})")
+
+    raise RuntimeError(
+        "No Vertex AI credentials available. "
+        "Run: gcloud auth application-default login  "
+        "or set GOOGLE_APPLICATION_CREDENTIALS to a service-account JSON with roles/aiplatform.user"
+    )
+
+
+# ── Vertex AI initialisation ───────────────────────────────────────────────────
+
+def _init_vertex():
+    project  = os.getenv("VERTEX_AI_PROJECT", "")
+    location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
+    if not project:
+        raise RuntimeError(
+            "VERTEX_AI_PROJECT is not set in .env. "
+            "Set it to the GCP project where Vertex AI is enabled."
+        )
+    creds = _get_vertex_credentials()
+    vertexai.init(project=project, location=location, credentials=creds)
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    logger.info(f"Vertex AI initialised: project={project} location={location} model={model_name}")
+    return GenerativeModel(model_name)
+
+
+try:
+    _model = _init_vertex()
+except Exception as exc:
+    logger.error(f"Vertex AI init failed: {exc}")
+    _model = None  # routes will raise a clean 503 when _model is None
+
+
+# ── Schema helpers ─────────────────────────────────────────────────────────────
 
 _TABLE_REF = "`mygclearning.test.one`"
 
@@ -182,16 +252,52 @@ Rules:
 """
 
 
+<<<<<<< HEAD
+=======
+# ── Response parsing ───────────────────────────────────────────────────────────
+
+def _parse_json(raw: str) -> dict:
+    raw = raw.strip()
+    if raw.startswith("```"):
+        parts = raw.split("```")
+        raw = parts[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    return json.loads(raw.strip())
+
+
+def _require_model():
+    if _model is None:
+        raise RuntimeError(
+            "Vertex AI model is not initialised. "
+            "Check VERTEX_AI_PROJECT in .env and ensure credentials are configured."
+        )
+
+
+# ── Public API ─────────────────────────────────────────────────────────────────
+
+def generate_widget(nl_query: str, glossary_terms: list[dict] | None = None) -> dict:
+    _require_model()
+    glossary_ctx = ""
+    if glossary_terms:
+        lines = "\n".join(f"  {t['term']} → {t['definition']}" for t in glossary_terms)
+        glossary_ctx = (
+            f"\n\nUser-defined aliases (substitute these when interpreting the request — "
+            f"treat each term as its mapped value in all contexts including table names, "
+            f"column aliases, and descriptions):\n{lines}"
+        )
+    prompt = f"{_build_system_prompt()}{glossary_ctx}\n\nUser request: {nl_query}"
+    response = _model.generate_content(prompt)
+    return _parse_json(response.text)
+
+
+>>>>>>> c411433 (Switch AI from Gemini API key to Vertex AI with IAM credentials)
 def chat_turn(
     message: str,
     history: list[dict],
     glossary_terms: list[dict] | None = None,
 ) -> dict:
-    """
-    Multi-turn conversational query. history is a list of
-    {"role": "user"|"assistant", "content": "..."} dicts.
-    Returns {"text": ..., "intent": ..., "widget": {...} | None}
-    """
+    _require_model()
     glossary_ctx = ""
     if glossary_terms:
         lines = "\n".join(f"  {t['term']} → {t['definition']}" for t in glossary_terms)
@@ -203,29 +309,27 @@ def chat_turn(
             f"'SELECT * FROM src' means 'SELECT * FROM `mygclearning.test.one`'):\n{lines}"
         )
 
-    # Build Gemini multi-turn history
-    gemini_history = []
-    for msg in history:
-        role = "user" if msg["role"] == "user" else "model"
-        gemini_history.append({"role": role, "parts": [msg["content"]]})
+    vertex_history = [
+        Content(
+            role="user" if msg["role"] == "user" else "model",
+            parts=[Part.from_text(msg["content"])],
+        )
+        for msg in history
+    ]
 
+<<<<<<< HEAD
     chat = _model.start_chat(history=gemini_history)
     prompt = f"{_CHAT_SYSTEM}{glossary_ctx}\n\nUser: {message}"
+=======
+    chat = _model.start_chat(history=vertex_history)
+    prompt = f"{_build_chat_system()}{glossary_ctx}\n\nUser: {message}"
+>>>>>>> c411433 (Switch AI from Gemini API key to Vertex AI with IAM credentials)
     response = chat.send_message(prompt)
-
-    raw = response.text.strip()
-    if raw.startswith("```"):
-        parts = raw.split("```")
-        raw = parts[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-
-    result = json.loads(raw.strip())
-    return result
+    return _parse_json(response.text)
 
 
 def refine_widget(current_sql: str, nl_modification: str, glossary_terms: list[dict] | None = None) -> dict:
-    """Modify an existing widget's SQL based on a natural language instruction."""
+    _require_model()
     glossary_ctx = ""
     if glossary_terms:
         lines = "\n".join(f"  {t['term']}: {t['definition']}" for t in glossary_terms)
@@ -238,18 +342,12 @@ def refine_widget(current_sql: str, nl_modification: str, glossary_terms: list[d
         f"Return a full updated widget JSON. Preserve chart_type and axis config unless "
         f"the modification clearly requires different visualisation settings."
     )
-
     response = _model.generate_content(prompt)
-    raw = response.text.strip()
-    if raw.startswith("```"):
-        parts = raw.split("```")
-        raw = parts[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    return json.loads(raw.strip())
+    return _parse_json(response.text)
 
 
 def generate_pdf_description(title: str, chart_type: str, data_summary: str) -> str:
+    _require_model()
     prompt = (
         f"You are writing a brief narrative for a PDF report section.\n"
         f"Widget title: {title}\nChart type: {chart_type}\nData summary: {data_summary}\n\n"

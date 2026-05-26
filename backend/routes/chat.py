@@ -48,13 +48,13 @@ async def chat(
         )
     except Exception as e:
         msg = str(e)
-        if any(k in msg for k in ("API_KEY_INVALID", "API key not valid", "API key expired")):
-            raise HTTPException(status_code=403, detail="Gemini API key is invalid or not configured. Contact your administrator.")
+        if "not initialised" in msg or "VERTEX_AI_PROJECT" in msg:
+            raise HTTPException(status_code=503, detail="Vertex AI is not configured. Set VERTEX_AI_PROJECT in .env and ensure credentials are available.")
         if "PERMISSION_DENIED" in msg or "permission denied" in msg.lower():
-            raise HTTPException(status_code=403, detail="Gemini API access denied. Verify your GEMINI_API_KEY has the Generative Language API enabled.")
+            raise HTTPException(status_code=403, detail="Vertex AI access denied. Ensure your account or service account has roles/aiplatform.user.")
         if any(k in msg for k in ("RESOURCE_EXHAUSTED", "429", "quota", "Quota exceeded", "rate limit")):
-            raise HTTPException(status_code=429, detail="Gemini API quota exceeded. Please wait a few minutes and try again.")
-        raise HTTPException(status_code=500, detail=f"Gemini error: {msg}")
+            raise HTTPException(status_code=429, detail="Vertex AI quota exceeded. Please wait a few minutes and try again.")
+        raise HTTPException(status_code=500, detail=f"AI error: {msg}")
 
     widget = result.get("widget")
 
