@@ -68,6 +68,11 @@ export async function fetchDagTasks(
   return data
 }
 
+export async function fetchDagCode(dagId: string, env: string): Promise<string> {
+  const { data } = await axios.get(`/api/airflow/dag/${dagId}/code`, { params: { env } })
+  return data.code ?? ''
+}
+
 export async function fetchTaskSql(
   dagId: string,
   taskId: string,

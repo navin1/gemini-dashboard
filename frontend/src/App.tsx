@@ -106,7 +106,7 @@ let _injectSqlToChat: ((sql: string) => void) | null = null
 // ── Content router ────────────────────────────────────────────────────────────
 function TabContent({
   tabId, tabLabel, registerCb,
-  airflowTabs, onOpenDagTab, onOpenSqlTab,
+  airflowTabs, onOpenDagTab, onOpenSqlTab, onSendToAgent,
 }: {
   tabId: string
   tabLabel: string
@@ -114,6 +114,7 @@ function TabContent({
   airflowTabs: AirflowTab[]
   onOpenDagTab: (dagId: string, env: string) => void
   onOpenSqlTab: (dagId: string, taskId: string, env: string, runId?: string, operatorFull?: string) => void
+  onSendToAgent: (text: string) => void
 }) {
   const airflowTab = airflowTabs.find(t => t.id === tabId)
 
@@ -123,6 +124,7 @@ function TabContent({
         dagId={airflowTab.dagId}
         env={airflowTab.env}
         onOpenSqlTab={onOpenSqlTab}
+        onSendToAgent={onSendToAgent}
       />
     )
   }
@@ -549,6 +551,7 @@ export default function App() {
                     airflowTabs={airflowTabs}
                     onOpenDagTab={openAirflowDagTab}
                     onOpenSqlTab={openAirflowSqlTab}
+                    onSendToAgent={(text) => { if (_injectSqlToChat) _injectSqlToChat(text) }}
                   />
                 </div>
               )
