@@ -187,6 +187,89 @@ async def dags_status(
     return {"dags": list(results), "env": env}
 
 
+@router.get("/dag/{dag_id}/meta")
+async def dag_meta(
+    dag_id: str,
+    env: str = Query(...),
+    token: Optional[str] = Depends(get_request_token),
+):
+    """
+    DAG metadata: schedule_interval, is_paused, last run info, last success run.
+    Mirrors the Chrome extension's fetchDagMeta() — 3 parallel Airflow calls.
+    """
+    import asyncio
+    base_url = _resolve_url(env)
+    dag_data, runs_data, success_data = await asyncio.gather(
+        _airflow_get(base_url, f"/dags/{dag_id}", token),
+        _airflow_get(base_url, f"/dags/{dag_id}/dagRuns", token,
+                     params={"limit": "1", "order_by": "-execution_date"}),
+        _airflow_get(base_url, f"/dags/{dag_id}/dagRuns", token,
+                     params={"limit": "1", "order_by": "-execution_date", "state": "success"}),
+    )
+    last_run     = (runs_data.get("dag_runs")   or [])[0] if runs_data.get("dag_runs")   else None
+    success_run  = (success_data.get("dag_runs") or [])[0] if success_data.get("dag_runs") else None
+    return {
+        "dag_id":              dag_id,
+        "env":                 env,
+        "schedule_interval":   dag_data.get("schedule_interval"),
+        "is_paused":           bool(dag_data.get("is_paused")),
+        "last_run_id":         last_run.get("dag_run_id")   if last_run    else None,
+        "last_run_state":      last_run.get("state")         if last_run    else None,
+        "last_run_start":      last_run.get("start_date")    if last_run    else None,
+        "last_success_run_id": success_run.get("dag_run_id") if success_run else None,
+    }
+
+
+@router.post("/dag/{dag_id}/trigger")
+async def trigger_dag(
+    dag_id: str,
+    env: str = Query(...),
+    token: Optional[str] = Depends(get_request_token),
+):
+    """Trigger a new DAG run. Mirrors the Chrome extension's triggerDagRun()."""
+    base_url = _resolve_url(env)
+    headers  = await _airflow_headers(token)
+    full_url = f"{base_url}/api/v1/dags/{dag_id}/dagRuns"
+    logger.info(f"Airflow POST {full_url}")
+    t0 = time.perf_counter()
+    try:
+        async with httpx.AsyncClient(timeout=20.0, verify=True) as client:
+            resp = await client.post(full_url, headers=headers, json={})
+        ms = (time.perf_counter() - t0) * 1000
+    except httpx.ConnectError as exc:
+        ms = (time.perf_counter() - t0) * 1000
+        logger.error(f"Airflow connect failed → {full_url} after {ms:.0f}ms: {exc}")
+        raise HTTPException(status_code=502, detail=f"Cannot reach Airflow at {base_url}: {exc}")
+    except Exception as exc:
+        ms = (time.perf_counter() - t0) * 1000
+        logger.exception(f"Airflow trigger error → {full_url} after {ms:.0f}ms")
+        raise HTTPException(status_code=500, detail=f"Trigger failed: {exc}")
+    if not resp.is_success:
+        logger.warning(f"Airflow trigger {resp.status_code} → {full_url}: {resp.text[:200]}")
+        raise HTTPException(status_code=resp.status_code, detail=f"Trigger failed: {resp.text[:300]}")
+    data = resp.json()
+    logger.info(f"Airflow trigger OK → {dag_id} run_id={data.get('dag_run_id')} in {ms:.0f}ms")
+    return {
+        "dag_id":         dag_id,
+        "env":            env,
+        "run_id":         data.get("dag_run_id"),
+        "execution_date": data.get("execution_date"),
+    }
+
+
+@router.get("/dag/{dag_id}/runs/{run_id}/state")
+async def dag_run_state(
+    dag_id: str,
+    run_id: str,
+    env: str = Query(...),
+    token: Optional[str] = Depends(get_request_token),
+):
+    """State of a specific run — used to poll after trigger. Mirrors fetchRunState()."""
+    base_url = _resolve_url(env)
+    data = await _airflow_get(base_url, f"/dags/{dag_id}/dagRuns/{run_id}", token)
+    return {"dag_id": dag_id, "run_id": run_id, "env": env, "state": data.get("state")}
+
+
 @router.get("/dag/{dag_id}/runs")
 async def dag_runs(
     dag_id: str,

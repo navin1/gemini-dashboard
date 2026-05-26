@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from typing import Optional
 from auth import get_request_token
 import bigquery_client
@@ -10,12 +10,13 @@ router = APIRouter(prefix="/api/scorecard", tags=["scorecard"])
 
 
 async def _run(sql: str, label: str = "", token: Optional[str] = None) -> list[dict]:
+    """Run a BQ query; return [] on failure so one bad query never kills the whole response."""
     loop = asyncio.get_running_loop()
     try:
         return await loop.run_in_executor(None, bigquery_client.run_query, sql, token)
     except Exception as e:
         logger.error(f"Scorecard query failed [{label}]: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return []
 
 
 @router.get("/uat")

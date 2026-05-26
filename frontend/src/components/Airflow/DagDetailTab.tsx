@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
-import { RefreshCw, Loader2 } from 'lucide-react'
-import { fetchDagRuns, fetchDagTasks } from '../../api/airflow'
+import { useState, useEffect, useRef } from 'react'
+import { RefreshCw, Loader2, Play, PauseCircle, Clock } from 'lucide-react'
+import { fetchDagMeta, fetchDagRuns, fetchDagTasks, triggerDagRun, fetchRunState } from '../../api/airflow'
 import type { AirflowRun, AirflowTask } from '../../types'
+import type { DagMeta } from '../../api/airflow'
 import RunHistory from './RunHistory'
 import DagGraph from './DagGraph'
 
@@ -12,22 +13,29 @@ interface Props {
 }
 
 export default function DagDetailTab({ dagId, env, onOpenSqlTab }: Props) {
-  const [runs, setRuns]             = useState<AirflowRun[]>([])
-  const [tasks, setTasks]           = useState<AirflowTask[]>([])
+  const [meta, setMeta]                   = useState<DagMeta | null>(null)
+  const [runs, setRuns]                   = useState<AirflowRun[]>([])
+  const [tasks, setTasks]                 = useState<AirflowTask[]>([])
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
-  const [loading, setLoading]       = useState(true)
-  const [tasksLoading, setTasksLoading] = useState(false)
-  const [error, setError]           = useState<string | null>(null)
+  const [loading, setLoading]             = useState(true)
+  const [tasksLoading, setTasksLoading]   = useState(false)
+  const [error, setError]                 = useState<string | null>(null)
+  const [triggering, setTriggering]       = useState(false)
+  const [triggerMsg, setTriggerMsg]       = useState<string | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   async function load(runId?: string) {
     setLoading(true)
     setError(null)
     try {
-      const [runsData, tasksData] = await Promise.all([
+      // Mirrors Chrome extension's loadDag(): fetchDagMeta + fetchDagTasks in parallel
+      const [metaData, runsData, tasksData] = await Promise.all([
+        fetchDagMeta(dagId, env),
         fetchDagRuns(dagId, env, 5),
         fetchDagTasks(dagId, env, runId),
       ])
+      setMeta(metaData)
       setRuns(runsData.runs)
       setTasks(tasksData.tasks)
       const effectiveRun = runId ?? tasksData.run_id ?? runsData.runs[0]?.run_id ?? null
@@ -40,6 +48,9 @@ export default function DagDetailTab({ dagId, env, onOpenSqlTab }: Props) {
   }
 
   useEffect(() => { load() }, [dagId, env])
+
+  // Stop polling on unmount
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
 
   async function handleSelectRun(runId: string) {
     setSelectedRunId(runId)
@@ -55,6 +66,31 @@ export default function DagDetailTab({ dagId, env, onOpenSqlTab }: Props) {
   function handleTaskClick(taskId: string, operatorFull: string) {
     setSelectedTaskId(taskId)
     onOpenSqlTab(dagId, taskId, env, selectedRunId ?? undefined, operatorFull)
+  }
+
+  async function handleTrigger() {
+    setTriggering(true)
+    setTriggerMsg(null)
+    try {
+      const { run_id } = await triggerDagRun(dagId, env)
+      setTriggerMsg(`Run triggered: ${run_id}`)
+      // Poll state every 5s until terminal
+      pollRef.current = setInterval(async () => {
+        try {
+          const state = await fetchRunState(dagId, run_id, env)
+          setTriggerMsg(`Run ${run_id}: ${state}`)
+          if (['success', 'failed', 'upstream_failed'].includes(state)) {
+            clearInterval(pollRef.current!)
+            pollRef.current = null
+            load()
+          }
+        } catch { /* non-fatal */ }
+      }, 5000)
+    } catch (e: unknown) {
+      setTriggerMsg(`Trigger failed: ${(e as Error).message}`)
+    } finally {
+      setTriggering(false)
+    }
   }
 
   if (loading) return (
@@ -75,16 +111,48 @@ export default function DagDetailTab({ dagId, env, onOpenSqlTab }: Props) {
     <div className="flex flex-col h-full gap-4 p-4 min-h-0">
       {/* Header */}
       <div className="flex items-center justify-between flex-shrink-0">
-        <div>
-          <h2 className="text-base font-semibold text-gray-800">{dagId}</h2>
-          <span className="text-xs text-gray-400">{env} — last 5 runs</span>
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-semibold text-gray-800">{dagId}</h2>
+            {meta?.is_paused && (
+              <span className="flex items-center gap-1 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">
+                <PauseCircle size={10} /> Paused
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3 text-xs text-gray-400">
+            <span>{env} — last 5 runs</span>
+            {meta?.schedule_interval && (
+              <span className="flex items-center gap-1">
+                <Clock size={10} /> {meta.schedule_interval}
+              </span>
+            )}
+            {meta?.last_run_state && (
+              <span className={`font-medium ${meta.last_run_state === 'success' ? 'text-emerald-600' : meta.last_run_state === 'failed' ? 'text-red-500' : 'text-gray-500'}`}>
+                last: {meta.last_run_state}
+              </span>
+            )}
+          </div>
+          {triggerMsg && (
+            <span className="text-xs text-brand-600 mt-0.5">{triggerMsg}</span>
+          )}
         </div>
-        <button
-          onClick={() => load(selectedRunId ?? undefined)}
-          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-1.5 rounded-lg"
-        >
-          <RefreshCw size={13} /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleTrigger}
+            disabled={triggering}
+            className="flex items-center gap-1.5 text-sm text-white bg-brand-600 hover:bg-brand-700 disabled:opacity-50 px-3 py-1.5 rounded-lg"
+          >
+            {triggering ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+            Trigger
+          </button>
+          <button
+            onClick={() => load(selectedRunId ?? undefined)}
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-1.5 rounded-lg"
+          >
+            <RefreshCw size={13} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Run history */}
