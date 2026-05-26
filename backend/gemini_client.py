@@ -391,6 +391,8 @@ Behaviour:
 - You may call the tool multiple times in one turn — explore first, then refine, then summarise.
 - When the user asks to visualise data, include a widget in your final JSON response.
 - Always maintain context from conversation history.
+- If a query errors, try an alternative SQL approach (different column names, different filters) before giving up.
+- For filter values (Status, Resource_Type, etc.) use run_bigquery_query with SELECT DISTINCT to discover exact values before applying WHERE clauses.
 
 You MUST end every turn with a single raw JSON object (no markdown, no prose outside the JSON):
 {{
@@ -416,44 +418,140 @@ Rules:
 - intent="chart" → always include widget with working SQL.
 - intent="both" → include both text explanation and widget.
 - Always include exactly 2-3 suggested_questions grounded in the data you just found.
-- If a query errors, try an alternative SQL approach before giving up.
+
+--- FEW-SHOT EXAMPLES ---
+
+Example 1 — Single KPI metric:
+User: "What is the total YTD spend?"
+Thought: The user wants a single summary number. I should query YTD_Spend, return a kpi chart type with one row.
+Tool call → SELECT ROUND(SUM(YTD_Spend), 2) AS total_ytd_spend FROM {tables_clause.split(',')[0].strip().strip('`')} (or first table)
+Final JSON:
+{{
+  "text": "Total year-to-date spend across all projects is $142.3M. This reflects all active and inactive resources combined.",
+  "intent": "both",
+  "widget": {{
+    "sql": "SELECT ROUND(SUM(YTD_Spend), 2) AS total_ytd_spend FROM {tables_clause.split(',')[0].strip().strip('`')}",
+    "chart_type": "kpi",
+    "title": "Total YTD Spend",
+    "x_axis": null,
+    "y_axis": ["total_ytd_spend"],
+    "color_field": null,
+    "stacked": false,
+    "dual_axis": false,
+    "secondary_y": null,
+    "ai_description": "Aggregate year-to-date spend across all resources and projects."
+  }},
+  "suggested_questions": ["Break down YTD spend by vendor?", "How does Capital compare to Expense spend?", "Which project has the highest YTD spend?"]
+}}
+
+Example 2 — Stacked bar time-series across fiscal periods:
+User: "Show me monthly spend split by Capital vs Expense over the year"
+Thought: Monthly trend with category split = stacked_bar. Periods are columns Period_01_Dollars through Period_12_Dollars. I must UNION ALL each period.
+Tool call → verify column names and data exists
+Final JSON:
+{{
+  "text": "Here is the monthly spend broken down by Capital and Expense project class. Capital spend peaks mid-year while Expense stays relatively flat.",
+  "intent": "chart",
+  "widget": {{
+    "sql": "SELECT 'Jan' AS month, 'Capital' AS project_class, SUM(Period_01_Dollars) AS spend FROM {tables_clause.split(',')[0].strip().strip('`')} WHERE Project_Class = 'Capital' GROUP BY 1,2 UNION ALL SELECT 'Jan','Expense',SUM(Period_01_Dollars) FROM {tables_clause.split(',')[0].strip().strip('`')} WHERE Project_Class = 'Expense' GROUP BY 1,2 UNION ALL SELECT 'Feb','Capital',SUM(Period_02_Dollars) FROM {tables_clause.split(',')[0].strip().strip('`')} WHERE Project_Class = 'Capital' GROUP BY 1,2 UNION ALL SELECT 'Feb','Expense',SUM(Period_02_Dollars) FROM {tables_clause.split(',')[0].strip().strip('`')} WHERE Project_Class = 'Expense' GROUP BY 1,2",
+    "chart_type": "stacked_bar",
+    "title": "Monthly Spend: Capital vs Expense",
+    "x_axis": "month",
+    "y_axis": ["spend"],
+    "color_field": "project_class",
+    "stacked": true,
+    "dual_axis": false,
+    "secondary_y": null,
+    "ai_description": "Monthly spend split by project classification. Use this to track how capital investment vs operating expense evolves through the fiscal year."
+  }},
+  "suggested_questions": ["Which vendor drives the most Capital spend?", "Show headcount trend alongside spend?", "Filter to only active projects?"]
+}}
+
+Example 3 — Ranked horizontal bar (top N):
+User: "Top 10 vendors by spend"
+Thought: Ranking comparison = horizontal_bar. Group by Vendor, sum YTD_Spend, order descending, limit 10.
+Tool call → run the query to verify column and get real data
+Final JSON:
+{{
+  "text": "Here are the top 10 vendors by year-to-date spend. The top vendor accounts for a significant portion of total contractor spend.",
+  "intent": "chart",
+  "widget": {{
+    "sql": "SELECT Vendor, ROUND(SUM(YTD_Spend), 2) AS total_spend FROM {tables_clause.split(',')[0].strip().strip('`')} WHERE Vendor IS NOT NULL GROUP BY Vendor ORDER BY total_spend DESC LIMIT 10",
+    "chart_type": "horizontal_bar",
+    "title": "Top 10 Vendors by YTD Spend",
+    "x_axis": "total_spend",
+    "y_axis": ["total_spend"],
+    "color_field": null,
+    "stacked": false,
+    "dual_axis": false,
+    "secondary_y": null,
+    "ai_description": "Ranked vendor spend for the current fiscal year. Helps identify concentration risk and largest contractor relationships."
+  }},
+  "suggested_questions": ["Compare onshore vs offshore for these vendors?", "Which vendor has the most resources?", "Show vendor spend trend by month?"]
+}}
+--- END EXAMPLES ---
 """
 
 
-def agent_chat(
-    message: str,
-    history: list[dict],
-    glossary_terms: list[dict] | None = None,
-    token: str | None = None,
-    max_tool_calls: int = 10,
-) -> dict:
-    _require_model()
+# ── Contextual distinct-value hints ───────────────────────────────────────────
+# Maps keywords the user might say → (column_name, fetch_limit).
+# When a keyword appears in the message we pre-fetch distinct values for that
+# column so the model can write precise WHERE clauses without an extra tool call.
 
-    glossary_ctx = ""
-    if glossary_terms:
-        lines = "\n".join(f"  {t['term']} → {t['definition']}" for t in glossary_terms)
-        glossary_ctx = (
-            f"\n\nUser-defined aliases (treat each term as its mapped value in all contexts — "
-            f"table names, column names, abbreviations):\n{lines}"
-        )
+_KEYWORD_COLUMNS: list[tuple[list[str], str, int]] = [
+    (["vendor", "vendors", "supplier"],           "Vendor",               60),
+    (["status", "active", "inactive"],            "Status",               30),
+    (["resource type", "resource_type", "fte", "contractor"], "Resource_Type", 20),
+    (["bill type", "billtype", "t&m", "fixed fee"], "BillType",           10),
+    (["onshore", "offshore", "fob"],              "FOB",                  10),
+    (["project class", "capital", "expense"],     "Project_Class",        10),
+    (["business area", "businessarea"],           "BusinessArea",         40),
+    (["intake priority", "priority"],             "Intake_Priority_Type", 15),
+    (["intake status"],                           "Intake_Status",        15),
+    (["project status"],                          "Project_Status",       15),
+    (["tab", "tabname", "sheet"],                 "TabName",              20),
+    (["manager", "resource manager"],             "Resource_Manager",     50),
+]
 
+
+def _build_contextual_hints(message: str, token: str | None) -> str:
+    """Pre-fetch distinct values for columns whose keywords appear in the user message."""
+    msg_lower = message.lower()
+    hints: list[str] = []
+
+    # Use the first configured table for distinct-value queries
+    table_ref = bigquery_client.TABLE_REFS[0] if bigquery_client.TABLE_REFS else ""
+    if not table_ref:
+        return ""
+
+    for keywords, column, limit in _KEYWORD_COLUMNS:
+        if any(kw in msg_lower for kw in keywords):
+            try:
+                sql = f"SELECT DISTINCT {column} FROM `{table_ref}` WHERE {column} IS NOT NULL ORDER BY {column} LIMIT {limit}"
+                rows = bigquery_client.run_query(sql, token)
+                values = [str(r.get(column, "")) for r in rows if r.get(column)]
+                if values:
+                    hints.append(f"  {column}: {', '.join(values)}")
+                    logger.debug(f"Contextual hint for {column}: {len(values)} values")
+            except Exception as exc:
+                logger.debug(f"Contextual hint fetch failed for {column}: {exc}")
+
+    if not hints:
+        return ""
+    return "\n\nContextual values (exact strings to use in WHERE clauses):\n" + "\n".join(hints)
+
+
+def _build_agent_model():
     model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    agent_model = GenerativeModel(
+    return GenerativeModel(
         model_name,
         tools=[_BQ_TOOL],
         system_instruction=_build_agent_system(),
     )
 
-    vertex_history = [
-        Content(
-            role="user" if msg["role"] == "user" else "model",
-            parts=[Part.from_text(msg["content"])],
-        )
-        for msg in history
-    ]
 
-    chat = agent_model.start_chat(history=vertex_history)
-    user_prompt = f"{glossary_ctx}\n\nUser: {message}" if glossary_ctx else f"User: {message}"
+def _run_agent_loop(chat, user_prompt: str, token: str | None, max_tool_calls: int) -> dict:
+    """Core synchronous agent loop. Returns the final parsed JSON dict."""
     response = chat.send_message(user_prompt)
 
     for _ in range(max_tool_calls):
@@ -486,6 +584,124 @@ def agent_chat(
         response = chat.send_message(fn_responses)
 
     return _parse_json(response.text)
+
+
+def agent_chat(
+    message: str,
+    history: list[dict],
+    glossary_terms: list[dict] | None = None,
+    token: str | None = None,
+    max_tool_calls: int = 10,
+) -> dict:
+    _require_model()
+
+    glossary_ctx = ""
+    if glossary_terms:
+        lines = "\n".join(f"  {t['term']} → {t['definition']}" for t in glossary_terms)
+        glossary_ctx = (
+            f"\n\nUser-defined aliases (treat each term as its mapped value in all contexts — "
+            f"table names, column names, abbreviations):\n{lines}"
+        )
+
+    contextual_hints = _build_contextual_hints(message, token)
+
+    agent_model = _build_agent_model()
+
+    vertex_history = [
+        Content(
+            role="user" if msg["role"] == "user" else "model",
+            parts=[Part.from_text(msg["content"])],
+        )
+        for msg in history
+    ]
+
+    chat = agent_model.start_chat(history=vertex_history)
+    user_prompt = f"{glossary_ctx}{contextual_hints}\n\nUser: {message}"
+    return _run_agent_loop(chat, user_prompt, token, max_tool_calls)
+
+
+async def agent_chat_stream(
+    message: str,
+    history: list[dict],
+    glossary_terms: list[dict] | None = None,
+    token: str | None = None,
+    max_tool_calls: int = 10,
+):
+    """Async generator that yields SSE-ready dicts during the agent loop.
+
+    Yields:
+        {"type": "status", "message": str}   — during tool calls
+        {"type": "result",  "data": dict}    — final parsed JSON (one, last event)
+        {"type": "error",   "message": str}  — on unrecoverable failure
+    """
+    import asyncio
+
+    _require_model()
+
+    loop = asyncio.get_event_loop()
+
+    glossary_ctx = ""
+    if glossary_terms:
+        lines = "\n".join(f"  {t['term']} → {t['definition']}" for t in glossary_terms)
+        glossary_ctx = (
+            f"\n\nUser-defined aliases (treat each term as its mapped value in all contexts — "
+            f"table names, column names, abbreviations):\n{lines}"
+        )
+
+    yield {"type": "status", "message": "Preparing contextual hints…"}
+    contextual_hints = await loop.run_in_executor(
+        None, _build_contextual_hints, message, token
+    )
+
+    agent_model = _build_agent_model()
+    vertex_history = [
+        Content(
+            role="user" if msg["role"] == "user" else "model",
+            parts=[Part.from_text(msg["content"])],
+        )
+        for msg in history
+    ]
+
+    chat = agent_model.start_chat(history=vertex_history)
+    user_prompt = f"{glossary_ctx}{contextual_hints}\n\nUser: {message}"
+
+    yield {"type": "status", "message": "Analyzing your question…"}
+    response = await loop.run_in_executor(None, chat.send_message, user_prompt)
+
+    for step in range(max_tool_calls):
+        parts = response.candidates[0].content.parts
+        fc_parts = [p for p in parts if hasattr(p, "function_call") and p.function_call.name]
+        if not fc_parts:
+            break
+
+        yield {"type": "status", "message": f"Querying BigQuery… (step {step + 1})"}
+
+        fn_responses = []
+        for p in fc_parts:
+            fc = p.function_call
+            sql = fc.args.get("sql", "")
+            logger.info(f"Agent stream tool call: sql={sql[:120]!r}…")
+
+            def _run_bq(s=sql):
+                try:
+                    results = bigquery_client.run_query(s, token)
+                    logger.info(f"Agent stream tool result: {len(results)} rows")
+                    return {"status": "success", "row_count": len(results), "data": results[:50]}
+                except Exception as exc:
+                    logger.warning(f"Agent stream tool error: {exc}")
+                    return {"status": "error", "error": str(exc)}
+
+            resp_data = await loop.run_in_executor(None, _run_bq)
+            fn_responses.append(Part.from_function_response(name=fc.name, response=resp_data))
+
+        response = await loop.run_in_executor(None, chat.send_message, fn_responses)
+
+    yield {"type": "status", "message": "Formatting response…"}
+    try:
+        result = _parse_json(response.text)
+        yield {"type": "result", "data": result}
+    except Exception as exc:
+        yield {"type": "error", "message": f"Failed to parse AI response: {exc}"}
 
 
 def generate_pdf_description(title: str, chart_type: str, data_summary: str) -> str:
