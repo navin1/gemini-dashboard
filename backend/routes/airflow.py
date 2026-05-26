@@ -1,4 +1,5 @@
 """
+
 Airflow / Cloud Composer proxy routes.
 
 All calls are proxied through the backend so the frontend never talks to
@@ -76,43 +77,42 @@ def _resolve_url(env_name: str) -> str:
 
 async def _airflow_headers(token: Optional[str], audience: Optional[str] = None) -> dict[str, str]:
     """
-    Build Authorization headers for Airflow / Cloud Composer IAP calls.
+    Build Authorization headers for Airflow / Cloud Composer calls.
 
-    Priority:
-      1. Explicit Bearer token (GOOGLE_OAUTH_TOKEN env var or forwarded from frontend).
-      2. Service-account OIDC via google-auth (GOOGLE_APPLICATION_CREDENTIALS=service_account.json).
-      3. gcloud CLI fallback — works for user accounts; no service account required.
+    Composer 2 Airflow REST API requires a standard OAuth 2.0 access token
+    with the cloud-platform scope.
     """
     if token:
         logger.debug("Airflow auth: using explicit Bearer token")
         return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
-    # ── Attempt 1: google-auth fetch_id_token ────────────────────────────────
-    # Works when GOOGLE_APPLICATION_CREDENTIALS points to a service_account JSON.
-    # Fails silently for authorized_user credentials (from gcloud ADC login).
+    # ── Attempt 1: google-auth default credentials (access token) ────────────
+    # This works for both service accounts and ADC (gcloud application-default login).
     try:
-        import google.auth.transport.requests as ga_requests
-        import google.oauth2.id_token
+        import google.auth
+        import google.auth.transport.requests
 
-        auth_req = ga_requests.Request()
-        oidc_token = google.oauth2.id_token.fetch_id_token(auth_req, audience or "")
-        logger.debug(f"Airflow auth: service-account OIDC token (audience={audience})")
-        return {"Authorization": f"Bearer {oidc_token}", "Content-Type": "application/json"}
-    except Exception as sa_exc:
-        logger.debug(f"Airflow auth: fetch_id_token failed ({type(sa_exc).__name__}: {sa_exc}), trying gcloud…")
+        scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+        creds, _ = google.auth.default(scopes=scopes)
+        
+        auth_req = google.auth.transport.requests.Request()
+        creds.refresh(auth_req)
+        
+        access_token = creds.token
+        if access_token:
+            logger.debug("Airflow auth: google-auth access token obtained")
+            return {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    except Exception as exc:
+        logger.debug(f"Airflow auth: google.auth.default failed ({type(exc).__name__}: {exc}), trying gcloud fallback…")
 
-    # ── Attempt 2: gcloud auth print-identity-token ──────────────────────────
-    # Works for any user authenticated via `gcloud auth login` or
-    # `gcloud auth application-default login`. The Composer web server URL is
-    # passed as the IAP audience so IAP accepts the resulting OIDC token.
+    # ── Attempt 2: gcloud auth print-access-token ────────────────────────────
+    # Fallback for local user environments
     try:
         import subprocess
-        cmd = ["gcloud", "auth", "print-identity-token"]
-        if audience:
-            cmd.append(f"--audiences={audience}")
+        cmd = ["gcloud", "auth", "print-access-token"]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         if result.returncode == 0 and result.stdout.strip():
-            logger.debug("Airflow auth: gcloud identity token obtained")
+            logger.debug("Airflow auth: gcloud access token obtained")
             return {"Authorization": f"Bearer {result.stdout.strip()}", "Content-Type": "application/json"}
         logger.warning(f"Airflow auth: gcloud failed (rc={result.returncode}): {result.stderr.strip()}")
     except FileNotFoundError:
@@ -123,10 +123,10 @@ async def _airflow_headers(token: Optional[str], audience: Optional[str] = None)
     raise HTTPException(
         status_code=401,
         detail=(
-            "No valid credentials for Airflow IAP. Fix one of:\n"
+            "No valid credentials for Airflow. Fix one of:\n"
             "  1. Run: gcloud auth login  (easiest for local dev)\n"
-            "  2. Set GOOGLE_OAUTH_TOKEN in .env: gcloud auth print-identity-token\n"
-            "  3. Set GOOGLE_APPLICATION_CREDENTIALS to a service-account JSON with IAP access"
+            "  2. Set GOOGLE_OAUTH_TOKEN in .env: gcloud auth print-access-token\n"
+            "  3. Set GOOGLE_APPLICATION_CREDENTIALS to a service-account JSON with Composer access"
         ),
     )
 
@@ -160,7 +160,7 @@ async def _airflow_get(url: str, path: str, token: Optional[str], params: dict |
         raise HTTPException(status_code=401, detail="Airflow authentication failed. Check your token or credentials.")
     if resp.status_code == 403:
         logger.warning(f"Airflow 403 → {full_url}")
-        raise HTTPException(status_code=403, detail="Access denied. Check IAP / Composer permissions.")
+        raise HTTPException(status_code=403, detail="Access denied. Check IAM / Composer permissions.")
     if resp.status_code == 404:
         logger.warning(f"Airflow 404 → {full_url}")
         raise HTTPException(status_code=404, detail=f"Airflow resource not found: {path}")
@@ -409,22 +409,35 @@ async def task_sql(
                 f"/dags/{dag_id}/dagRuns/{rid}/taskInstances/{task_id}",
                 token,
             )
-            for key in ("rendered_fields", "rendered_map_index"):
-                rf = ti.get(key)
-                if isinstance(rf, dict):
-                    for sql_key in ("sql", "query", "bql"):
-                        val = rf.get(sql_key)
-                        if isinstance(val, str) and val.strip():
+
+            def _search_sql(obj) -> Optional[str]:
+                if isinstance(obj, dict):
+                    # Check common keys first
+                    for k in ("sql", "query", "bql"):
+                        val = obj.get(k)
+                        if isinstance(val, str) and val.strip() and not val.strip().endswith(".sql"):
                             return val.strip()
-            # Direct rendered_fields at top level (Airflow 2.x)
-            rf = ti.get("rendered_fields")
-            if isinstance(rf, dict):
-                for sql_key in ("sql", "query", "bql"):
-                    val = rf.get(sql_key)
-                    if isinstance(val, str) and val.strip():
-                        return val.strip()
-        except Exception:
-            pass
+                        if isinstance(val, list) and val and all(isinstance(x, str) for x in val):
+                            return "\\n;\\n".join(val).strip()
+                    # Recurse into values
+                    for v in obj.values():
+                        res = _search_sql(v)
+                        if res:
+                            return res
+                elif isinstance(obj, list):
+                    for item in obj:
+                        res = _search_sql(item)
+                        if res:
+                            return res
+                return None
+
+            for key in ("rendered_fields", "rendered_map_index"):
+                res = _search_sql(ti.get(key))
+                if res:
+                    return res
+
+        except Exception as exc:
+            logger.debug(f"Airflow task_sql extract error: {exc}")
         return None
 
     if run_id:
