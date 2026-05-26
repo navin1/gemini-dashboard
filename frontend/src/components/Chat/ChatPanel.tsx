@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, Loader2, Sparkles, Plus, RotateCcw, ChevronDown, ChevronUp, Mic, MicOff } from 'lucide-react'
-import { sendChatMessage, runSqlQuery, type ChatMessage, type ChatWidgetDef } from '../../api/chat'
+import { streamChatMessage, runSqlQuery, type ChatMessage, type ChatWidgetDef } from '../../api/chat'
 import { ChartRenderer } from '../Charts/ChartRenderer'
 import type { ChartType } from '../../types'
 
@@ -10,6 +10,7 @@ interface InternalMessage {
   text: string
   widget?: ChatWidgetDef
   loading?: boolean
+  statusText?: string
   suggested_questions?: string[]
 }
 
@@ -118,31 +119,54 @@ export function ChatPanel({ onAddWidget, onRegisterInject }: Props) {
     setExpanded(true)
 
     const userMsg: InternalMessage = { id: mid(), role: 'user', text }
-    const loadingMsg: InternalMessage = { id: mid(), role: 'assistant', text: '', loading: true }
+    const loadingMsg: InternalMessage = { id: mid(), role: 'assistant', text: '', loading: true, statusText: 'Starting…' }
     setMessages((prev) => [...prev, userMsg, loadingMsg])
     setLoading(true)
 
     try {
-      const resp = isSql(text)
-        ? await runSqlQuery(text)
-        : await sendChatMessage(text, buildHistory())
-      setMessages((prev) =>
-        prev.map((m) => m.loading
-          ? { ...m, loading: false, text: resp.text, widget: resp.widget, suggested_questions: resp.suggested_questions }
-          : m
+      if (isSql(text)) {
+        const resp = await runSqlQuery(text)
+        setMessages((prev) =>
+          prev.map((m) => m.loading
+            ? { ...m, loading: false, text: resp.text, widget: resp.widget, suggested_questions: resp.suggested_questions }
+            : m
+          )
         )
-      )
+        return
+      }
+
+      for await (const event of streamChatMessage(text, buildHistory())) {
+        if (event.type === 'status') {
+          setMessages((prev) =>
+            prev.map((m) => m.loading ? { ...m, statusText: event.message } : m)
+          )
+        } else if (event.type === 'result') {
+          const resp = event.data
+          setMessages((prev) =>
+            prev.map((m) => m.loading
+              ? { ...m, loading: false, statusText: undefined, text: resp.text, widget: resp.widget, suggested_questions: resp.suggested_questions }
+              : m
+            )
+          )
+        } else if (event.type === 'error') {
+          let msg = event.message
+          if (msg.includes('access denied') || msg.includes('not configured')) setGeminiUnavailable(true)
+          setMessages((prev) =>
+            prev.map((m) => m.loading ? { ...m, loading: false, statusText: undefined, text: msg } : m)
+          )
+        }
+      }
     } catch (err: unknown) {
       const serverDetail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? ''
       let msg = serverDetail || (err instanceof Error ? err.message : 'Unknown error')
       if (msg.includes('API key') || msg.includes('API_KEY_INVALID') || msg.includes('access denied') || msg.includes('not configured')) {
-        msg = 'AI Analyst is unavailable — Gemini API key is missing or invalid. Contact your administrator.'
+        msg = 'AI Analyst is unavailable — Vertex AI is not configured. Contact your administrator.'
         setGeminiUnavailable(true)
       } else if (msg.includes('429') || msg.includes('quota') || msg.includes('rate limit') || msg.includes('Quota exceeded')) {
-        msg = 'Gemini API quota exceeded. Please wait a few minutes and try again.'
+        msg = 'AI quota exceeded. Please wait a few minutes and try again.'
       }
       setMessages((prev) =>
-        prev.map((m) => m.loading ? { ...m, loading: false, text: msg } : m)
+        prev.map((m) => m.loading ? { ...m, loading: false, statusText: undefined, text: msg } : m)
       )
     } finally {
       setLoading(false)
@@ -255,8 +279,8 @@ export function ChatPanel({ onAddWidget, onRegisterInject }: Props) {
                 }`}>
                   {msg.loading ? (
                     <span className="flex items-center gap-2 text-slate-400">
-                      <Loader2 size={13} className="animate-spin" />
-                      <span className="text-xs">Thinking…</span>
+                      <Loader2 size={13} className="animate-spin flex-shrink-0" />
+                      <span className="text-xs italic">{msg.statusText ?? 'Starting…'}</span>
                     </span>
                   ) : (
                     <span className="whitespace-pre-wrap">{msg.text}</span>
