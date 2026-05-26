@@ -35,6 +35,54 @@ export async function sendChatMessage(
   return data
 }
 
+export type StreamEvent =
+  | { type: 'status'; message: string }
+  | { type: 'result'; data: ChatResponse }
+  | { type: 'error'; message: string }
+
+export async function* streamChatMessage(
+  message: string,
+  history: ChatMessage[]
+): AsyncGenerator<StreamEvent> {
+  const token = localStorage.getItem('google_oauth_token')
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const response = await fetch('/api/chat/stream', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ message, history }),
+  })
+
+  if (!response.ok || !response.body) {
+    const detail = await response.text().catch(() => '')
+    throw new Error(detail || `HTTP ${response.status}`)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue
+      try {
+        const event = JSON.parse(line.slice(6)) as StreamEvent
+        yield event
+      } catch {
+        // ignore malformed lines
+      }
+    }
+  }
+}
+
 export async function runSqlQuery(sql: string): Promise<ChatResponse> {
   try {
     const { data } = await client.post<ChatWidgetDef>('/query/sql', { sql })
