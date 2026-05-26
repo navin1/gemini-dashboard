@@ -18,6 +18,7 @@ export interface Widget {
   lockedHeaderBg?: string      // header bg color locked at copy/move time
   lockedHeaderBorder?: string  // header border color locked at copy/move time
   lockedAirflowEnv?: string    // airflow env locked at copy/move time (airflow_dags only)
+  lockedTabPrefix?: string     // badge label locked at copy/move time (DEV/UAT/PRD/My)
   // react-grid-layout position
   layout?: GridLayout
 }

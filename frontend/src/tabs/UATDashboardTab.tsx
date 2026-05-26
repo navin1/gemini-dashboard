@@ -104,7 +104,7 @@ interface Props {
 }
 
 export function UATDashboardTab({ tabLabel, onRegisterAddWidget, onOpenDagTab }: Props) {
-  const tabTheme = { headerBg: 'bg-orange-50', headerBorder: 'border-orange-100', airflowEnv: 'UAT', tabPrefix: 'UAT', onOpenDagTab }
+  const tabTheme = { headerBg: 'bg-yellow-50', headerBorder: 'border-yellow-100', airflowEnv: 'UAT', tabPrefix: 'UAT', onOpenDagTab }
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['scorecard', 'fte'],
     queryFn: fetchFTEScorecard,
@@ -202,7 +202,7 @@ export function UATDashboardTab({ tabLabel, onRegisterAddWidget, onOpenDagTab }:
   if (isLoading && !widgets.length) return <LoadingOverlay label="Loading UAT Dashboard…" />
   if (isError) return (
     <div className="p-8 text-center">
-      <p className="text-red-600 font-medium mb-3">Failed to load scorecard data</p>
+      <p className="text-red-600 font-medium mb-3">Failed to load UAT Dashboard data</p>
       <button onClick={() => refetch()} className="text-sm text-brand-600 underline">Retry</button>
     </div>
   )

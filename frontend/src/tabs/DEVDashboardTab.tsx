@@ -86,7 +86,7 @@ interface Props {
 }
 
 export function DEVDashboardTab({ tabLabel, onRegisterAddWidget, onOpenDagTab }: Props) {
-  const tabTheme = { headerBg: 'bg-yellow-50', headerBorder: 'border-yellow-100', airflowEnv: 'Dev', tabPrefix: 'DEV', onOpenDagTab }
+  const tabTheme = { headerBg: 'bg-blue-50', headerBorder: 'border-blue-100', airflowEnv: 'Dev', tabPrefix: 'DEV', onOpenDagTab }
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['scorecard', 'hierarchy'],
     queryFn: fetchHierarchyScorecard,
@@ -180,7 +180,7 @@ export function DEVDashboardTab({ tabLabel, onRegisterAddWidget, onOpenDagTab }:
   if (isLoading && !widgets.length) return <LoadingOverlay label="Loading DEV Dashboard…" />
   if (isError) return (
     <div className="p-8 text-center">
-      <p className="text-red-600 font-medium mb-3">Failed to load hierarchy data</p>
+      <p className="text-red-600 font-medium mb-3">Failed to load DEV Dashboard data</p>
       <button onClick={() => refetch()} className="text-sm text-brand-600 underline">Retry</button>
     </div>
   )

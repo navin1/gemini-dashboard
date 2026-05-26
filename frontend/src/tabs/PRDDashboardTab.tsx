@@ -118,7 +118,7 @@ interface Props {
 }
 
 export function PRDDashboardTab({ tabLabel, onRegisterAddWidget, onOpenDagTab }: Props) {
-  const tabTheme = { headerBg: 'bg-red-50', headerBorder: 'border-red-100', airflowEnv: 'PROD', tabPrefix: 'PRD', onOpenDagTab }
+  const tabTheme = { headerBg: 'bg-green-50', headerBorder: 'border-green-100', airflowEnv: 'PROD', tabPrefix: 'PRD', onOpenDagTab }
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['scorecard', 'vendor'],
     queryFn: fetchVendorScorecard,
@@ -212,7 +212,7 @@ export function PRDDashboardTab({ tabLabel, onRegisterAddWidget, onOpenDagTab }:
   if (isLoading && !widgets.length) return <LoadingOverlay label="Loading PRD Dashboard…" />
   if (isError) return (
     <div className="p-8 text-center">
-      <p className="text-red-600 font-medium mb-3">Failed to load vendor data</p>
+      <p className="text-red-600 font-medium mb-3">Failed to load PRD Dashboard data.</p>
       <button onClick={() => refetch()} className="text-sm text-brand-600 underline">Retry</button>
     </div>
   )

@@ -25,6 +25,13 @@ const TYPE_STYLE: Record<string, { border: string; badge: string }> = {
 }
 const FALLBACK = { border: 'border-l-slate-300', badge: 'bg-slate-100 text-slate-600' }
 
+const TAB_BADGE: Record<string, string> = {
+  DEV: 'bg-blue-100 text-blue-700',
+  UAT: 'bg-yellow-100 text-yellow-700',
+  PRD: 'bg-green-100 text-green-700',
+  My:  'bg-gray-100 text-gray-600',
+}
+
 // Stop RGL from treating button clicks as drag starts
 function noDrag(e: React.MouseEvent) { e.stopPropagation() }
 
@@ -48,10 +55,11 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
   const style = TYPE_STYLE[widget.chart_type] ?? FALLBACK
   const hasSql = !!widget.sql?.trim()
   const isAirflow = widget.chart_type === 'airflow_dags'
-  const { headerBg: ctxHeaderBg, headerBorder: ctxHeaderBorder, airflowEnv: ctxAirflowEnv } = useTabTheme()
+  const { headerBg: ctxHeaderBg, headerBorder: ctxHeaderBorder, airflowEnv: ctxAirflowEnv, tabPrefix } = useTabTheme()
   // Prefer widget-locked values (set at copy/move time) over live context
-  const headerBg     = widget.lockedHeaderBg     ?? ctxHeaderBg
-  const headerBorder = widget.lockedHeaderBorder  ?? ctxHeaderBorder
+  const headerBg     = widget.lockedHeaderBg    ?? ctxHeaderBg
+  const headerBorder = widget.lockedHeaderBorder ?? ctxHeaderBorder
+  const badgePrefix  = widget.lockedTabPrefix   ?? tabPrefix
 
   // Build widget with theme locked for transfer to another tab
   function withLockedTheme(w: WidgetType): WidgetType {
@@ -59,12 +67,13 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
       ...w,
       lockedHeaderBg:    w.lockedHeaderBg    ?? ctxHeaderBg,
       lockedHeaderBorder: w.lockedHeaderBorder ?? ctxHeaderBorder,
+      lockedTabPrefix:   w.lockedTabPrefix   ?? tabPrefix,
       ...(isAirflow && { lockedAirflowEnv: w.lockedAirflowEnv ?? ctxAirflowEnv }),
     }
   }
   // Clear locks when returning home (context supplies correct colors again)
   function withClearedTheme(w: WidgetType): WidgetType {
-    return { ...w, lockedHeaderBg: undefined, lockedHeaderBorder: undefined, lockedAirflowEnv: undefined }
+    return { ...w, lockedHeaderBg: undefined, lockedHeaderBorder: undefined, lockedAirflowEnv: undefined, lockedTabPrefix: undefined }
   }
 
   // Airflow widget controls — live state reported up from AirflowSection
@@ -188,8 +197,8 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
       {/* Header */}
       <div className={`drag-handle flex items-center justify-between px-4 py-2.5 ${headerBg} border-b ${headerBorder} border-l-4 ${style.border} cursor-grab active:cursor-grabbing select-none flex-shrink-0`}>
         <div className="flex items-center gap-2 min-w-0">
-          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide flex-shrink-0 ${style.badge}`}>
-            {widget.chart_type.replace(/_/g, ' ')}
+          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide flex-shrink-0 ${TAB_BADGE[badgePrefix] ?? TAB_BADGE.My}`}>
+            {badgePrefix}
           </span>
           {editingTitle ? (
             <input
