@@ -41,10 +41,11 @@ async def chat(
     glossary_terms = [{"term": g.term, "definition": g.definition} for g in glossary]
 
     try:
-        result = gemini_client.chat_turn(
+        result = gemini_client.agent_chat(
             message=req.message,
             history=[m.model_dump() for m in req.history],
             glossary_terms=glossary_terms,
+            token=token,
         )
     except Exception as e:
         msg = str(e)
