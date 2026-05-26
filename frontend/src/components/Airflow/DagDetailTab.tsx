@@ -29,17 +29,22 @@ export default function DagDetailTab({ dagId, env, onOpenSqlTab }: Props) {
     setLoading(true)
     setError(null)
     try {
-      // Mirrors Chrome extension's loadDag(): fetchDagMeta + fetchDagTasks in parallel
-      const [metaData, runsData, tasksData] = await Promise.all([
+      // Step 1: meta + run history in parallel (meta gives us last_run_id)
+      const [metaData, runsData] = await Promise.all([
         fetchDagMeta(dagId, env),
         fetchDagRuns(dagId, env, 5),
-        fetchDagTasks(dagId, env, runId),
       ])
       setMeta(metaData)
       setRuns(runsData.runs)
-      setTasks(tasksData.tasks)
-      const effectiveRun = runId ?? tasksData.run_id ?? runsData.runs[0]?.run_id ?? null
+
+      // Step 2: fetch tasks with the known run_id — no duplicate dagRuns call in backend
+      // Matches Chrome extension loadDag(): fetchDagMeta → meta.last_run_id → fetchDagTasks
+      const effectiveRun = runId ?? metaData.last_run_id ?? runsData.runs[0]?.run_id ?? null
       setSelectedRunId(effectiveRun)
+      if (effectiveRun) {
+        const tasksData = await fetchDagTasks(dagId, env, effectiveRun)
+        setTasks(tasksData.tasks)
+      }
     } catch (e: unknown) {
       setError((e as Error).message ?? 'Failed to load DAG data')
     } finally {

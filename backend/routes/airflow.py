@@ -30,6 +30,11 @@ load_dotenv()
 
 router = APIRouter(prefix="/api/airflow", tags=["airflow"])
 
+# Set AIRFLOW_VERIFY_SSL=false in .env to disable SSL verification (e.g. corporate proxy)
+_SSL_VERIFY: bool = os.getenv("AIRFLOW_VERIFY_SSL", "true").lower() not in ("false", "0", "no")
+if not _SSL_VERIFY:
+    logger.warning("AIRFLOW_VERIFY_SSL=false — SSL certificate verification is DISABLED for Airflow requests")
+
 # ── Config parsing ─────────────────────────────────────────────────────────────
 
 def _parse_environments() -> list[dict]:
@@ -69,44 +74,54 @@ def _resolve_url(env_name: str) -> str:
 
 # ── Auth helper ────────────────────────────────────────────────────────────────
 
-async def _airflow_headers(token: Optional[str]) -> dict[str, str]:
+async def _airflow_headers(token: Optional[str], audience: Optional[str] = None) -> dict[str, str]:
     """
     Build Authorization headers for Airflow API calls.
-    Tries the user's Bearer token first; falls back to ADC/service account.
+
+    Priority:
+      1. User Bearer token from the request — used as-is (works for IAP).
+      2. ADC/service-account OIDC token — Cloud Composer IAP requires an OIDC
+         identity token (not a plain access token). fetch_id_token() produces the
+         correct token type when the audience is the Composer base URL.
     """
     if token:
         return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
-    # Fallback: use google-auth to get a fresh ADC/service-account token
     try:
-        import google.auth
         import google.auth.transport.requests as ga_requests
+        import google.oauth2.id_token
 
-        creds, _ = google.auth.default(
-            scopes=["https://www.googleapis.com/auth/cloud-platform"]
-        )
-        req = ga_requests.Request()
-        creds.refresh(req)
+        # Cloud Composer IAP needs an OIDC ID token, NOT a cloud-platform access token.
+        # The audience must be the Composer web server URL (no trailing path).
+        iap_audience = audience or ""
+        auth_req = ga_requests.Request()
+        oidc_token = google.oauth2.id_token.fetch_id_token(auth_req, iap_audience)
+        logger.debug(f"ADC OIDC token obtained for audience={iap_audience}")
         return {
-            "Authorization": f"Bearer {creds.token}",
+            "Authorization": f"Bearer {oidc_token}",
             "Content-Type": "application/json",
         }
     except Exception as exc:
         raise HTTPException(
             status_code=401,
-            detail=f"No valid credentials found. Set GOOGLE_APPLICATION_CREDENTIALS or log in. ({exc})",
+            detail=(
+                f"No valid credentials for Airflow IAP. "
+                f"Set GOOGLE_OAUTH_TOKEN in .env (run: gcloud auth print-identity-token) "
+                f"or configure GOOGLE_APPLICATION_CREDENTIALS with a service account that "
+                f"has IAP access. ({type(exc).__name__}: {exc})"
+            ),
         )
 
 
 # ── Generic proxy helper ───────────────────────────────────────────────────────
 
 async def _airflow_get(url: str, path: str, token: Optional[str], params: dict | None = None) -> dict:
-    headers = await _airflow_headers(token)
+    headers = await _airflow_headers(token, audience=url)
     full_url = f"{url}/api/v1{path}"
     logger.info(f"Airflow GET {full_url} params={params or {}}")
     t0 = time.perf_counter()
     try:
-        async with httpx.AsyncClient(timeout=20.0, verify=True) as client:
+        async with httpx.AsyncClient(timeout=20.0, verify=_SSL_VERIFY) as client:
             resp = await client.get(full_url, headers=headers, params=params or {})
         ms = (time.perf_counter() - t0) * 1000
     except httpx.ConnectError as exc:
@@ -228,12 +243,12 @@ async def trigger_dag(
 ):
     """Trigger a new DAG run. Mirrors the Chrome extension's triggerDagRun()."""
     base_url = _resolve_url(env)
-    headers  = await _airflow_headers(token)
+    headers  = await _airflow_headers(token, audience=base_url)
     full_url = f"{base_url}/api/v1/dags/{dag_id}/dagRuns"
     logger.info(f"Airflow POST {full_url}")
     t0 = time.perf_counter()
     try:
-        async with httpx.AsyncClient(timeout=20.0, verify=True) as client:
+        async with httpx.AsyncClient(timeout=20.0, verify=_SSL_VERIFY) as client:
             resp = await client.post(full_url, headers=headers, json={})
         ms = (time.perf_counter() - t0) * 1000
     except httpx.ConnectError as exc:
@@ -306,63 +321,37 @@ async def dag_runs(
 async def dag_tasks(
     dag_id: str,
     env: str = Query(...),
-    run_id: Optional[str] = Query(None, description="Run ID to fetch task states for"),
+    run_id: str = Query(..., description="Run ID to fetch task states for — get this from /meta"),
     token: Optional[str] = Depends(get_request_token),
 ):
     """
-    Return task structure + task instance states for the given run.
-    If run_id is omitted, fetches the most recent run.
+    Return task structure + task instance states for a specific run.
+    run_id is required — callers must first fetch /meta to get last_run_id.
+    Mirrors Chrome extension: fetchDagTasks (structure) + fetchTaskStates (states) in one call.
     """
-    base_url = _resolve_url(env)
     import asyncio
+    base_url = _resolve_url(env)
 
-    # Fetch task structure
-    task_data = await _airflow_get(base_url, f"/dags/{dag_id}/tasks", token)
-    tasks_raw = task_data.get("tasks", [])
+    # Task structure and task states fetched in parallel — no extra dagRuns call
+    task_data, ti_data = await asyncio.gather(
+        _airflow_get(base_url, f"/dags/{dag_id}/tasks", token),
+        _airflow_get(base_url, f"/dags/{dag_id}/dagRuns/{run_id}/taskInstances", token),
+    )
+
+    state_map = {
+        ti.get("task_id"): ti.get("state")
+        for ti in ti_data.get("task_instances", [])
+    }
     tasks = [
         {
             "task_id": str(t.get("task_id", "")),
             "operator": str((t.get("class_ref") or {}).get("class_name", "")),
             "downstream_task_ids": t.get("downstream_task_ids", []),
-            "state": None,
+            "state": state_map.get(str(t.get("task_id", ""))),
         }
-        for t in tasks_raw
+        for t in task_data.get("tasks", [])
     ]
-
-    # Resolve run_id if not provided
-    effective_run_id = run_id
-    if not effective_run_id:
-        try:
-            runs_data = await _airflow_get(
-                base_url,
-                f"/dags/{dag_id}/dagRuns",
-                token,
-                params={"limit": "1", "order_by": "-execution_date"},
-            )
-            dag_runs_list = runs_data.get("dag_runs", [])
-            if dag_runs_list:
-                effective_run_id = dag_runs_list[0].get("dag_run_id")
-        except Exception:
-            pass
-
-    # Fetch task instance states
-    if effective_run_id:
-        try:
-            ti_data = await _airflow_get(
-                base_url,
-                f"/dags/{dag_id}/dagRuns/{effective_run_id}/taskInstances",
-                token,
-            )
-            state_map = {
-                ti.get("task_id"): ti.get("state")
-                for ti in ti_data.get("task_instances", [])
-            }
-            for t in tasks:
-                t["state"] = state_map.get(t["task_id"])
-        except Exception:
-            pass
-
-    return {"dag_id": dag_id, "env": env, "run_id": effective_run_id, "tasks": tasks}
+    return {"dag_id": dag_id, "env": env, "run_id": run_id, "tasks": tasks}
 
 
 @router.get("/task/{dag_id}/{task_id}/sql")
