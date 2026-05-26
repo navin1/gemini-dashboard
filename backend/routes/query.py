@@ -67,8 +67,13 @@ async def run_nl_query(
         widget_def = gemini_client.generate_widget(req.nl_query, glossary_terms)
         logger.info(f"Gemini generated chart_type={widget_def.get('chart_type')} title={widget_def.get('title')!r}")
     except Exception as e:
-        logger.error(f"Gemini error for query {req.nl_query!r}: {e}")
-        raise HTTPException(status_code=500, detail=f"Gemini error: {str(e)}")
+        msg = str(e)
+        logger.error(f"AI error for query {req.nl_query!r}: {msg}")
+        if "not initialised" in msg or "VERTEX_AI_PROJECT" in msg:
+            raise HTTPException(status_code=503, detail="Vertex AI is not configured. Set VERTEX_AI_PROJECT in .env and ensure credentials are available.")
+        if "PERMISSION_DENIED" in msg or "permission denied" in msg.lower():
+            raise HTTPException(status_code=403, detail="Vertex AI access denied. Ensure your account or service account has roles/aiplatform.user.")
+        raise HTTPException(status_code=500, detail=f"AI error: {msg}")
 
     try:
         data = bigquery_client.run_query(widget_def["sql"], token)
@@ -106,7 +111,12 @@ async def refine_query(
     try:
         widget_def = gemini_client.refine_widget(req.sql, req.nl_modification, glossary_terms)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Gemini error: {str(e)}")
+        msg = str(e)
+        if "not initialised" in msg or "VERTEX_AI_PROJECT" in msg:
+            raise HTTPException(status_code=503, detail="Vertex AI is not configured. Set VERTEX_AI_PROJECT in .env and ensure credentials are available.")
+        if "PERMISSION_DENIED" in msg or "permission denied" in msg.lower():
+            raise HTTPException(status_code=403, detail="Vertex AI access denied. Ensure your account or service account has roles/aiplatform.user.")
+        raise HTTPException(status_code=500, detail=f"AI error: {msg}")
 
     try:
         data = bigquery_client.run_query(widget_def["sql"], token)

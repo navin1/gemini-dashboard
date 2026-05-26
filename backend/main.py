@@ -77,11 +77,13 @@ app.include_router(airflow.router)
 
 @app.get("/api/health")
 async def health():
-    gemini_ok = bool(os.getenv("GEMINI_API_KEY", "").strip())
+    import gemini_client
     return {
         "status": "ok",
-        "gemini": gemini_ok,
+        "ai_ready": gemini_client._model is not None,
         "model": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+        "vertex_project": os.getenv("VERTEX_AI_PROJECT", ""),
+        "vertex_location": os.getenv("VERTEX_AI_LOCATION", "us-central1"),
         "bigquery_project": os.getenv("BIGQUERY_PROJECT_ID", ""),
         "live_refresh_interval": stream.POLL_INTERVAL,
     }
