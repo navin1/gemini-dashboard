@@ -13,7 +13,9 @@ Configured via .env:
   AIRFLOW_DAGS         = dag_id_1,dag_id_2
 """
 
+import logging
 import os
+import time
 from typing import Optional
 
 import httpx
@@ -21,6 +23,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from dotenv import load_dotenv
 
 from auth import get_request_token
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -99,16 +103,39 @@ async def _airflow_headers(token: Optional[str]) -> dict[str, str]:
 async def _airflow_get(url: str, path: str, token: Optional[str], params: dict | None = None) -> dict:
     headers = await _airflow_headers(token)
     full_url = f"{url}/api/v1{path}"
-    async with httpx.AsyncClient(timeout=20.0, verify=True) as client:
-        resp = await client.get(full_url, headers=headers, params=params or {})
+    logger.info(f"Airflow GET {full_url} params={params or {}}")
+    t0 = time.perf_counter()
+    try:
+        async with httpx.AsyncClient(timeout=20.0, verify=True) as client:
+            resp = await client.get(full_url, headers=headers, params=params or {})
+        ms = (time.perf_counter() - t0) * 1000
+    except httpx.ConnectError as exc:
+        ms = (time.perf_counter() - t0) * 1000
+        logger.error(f"Airflow connect failed → {full_url} after {ms:.0f}ms: {exc}")
+        raise HTTPException(status_code=502, detail=f"Cannot reach Airflow at {url}. Check AIRFLOW_ENVIRONMENTS in .env. ({type(exc).__name__}: {exc})")
+    except httpx.TimeoutException as exc:
+        ms = (time.perf_counter() - t0) * 1000
+        logger.error(f"Airflow timeout → {full_url} after {ms:.0f}ms: {exc}")
+        raise HTTPException(status_code=504, detail=f"Airflow request timed out after 20s: {url}{path}")
+    except Exception as exc:
+        ms = (time.perf_counter() - t0) * 1000
+        logger.exception(f"Airflow unexpected error → {full_url} after {ms:.0f}ms")
+        raise HTTPException(status_code=500, detail=f"Airflow request failed: {exc}")
+
     if resp.status_code == 401:
+        logger.warning(f"Airflow 401 → {full_url}")
         raise HTTPException(status_code=401, detail="Airflow authentication failed. Check your token or credentials.")
     if resp.status_code == 403:
+        logger.warning(f"Airflow 403 → {full_url}")
         raise HTTPException(status_code=403, detail="Access denied. Check IAP / Composer permissions.")
     if resp.status_code == 404:
+        logger.warning(f"Airflow 404 → {full_url}")
         raise HTTPException(status_code=404, detail=f"Airflow resource not found: {path}")
     if not resp.is_success:
+        logger.warning(f"Airflow {resp.status_code} → {full_url} in {ms:.0f}ms: {resp.text[:200]}")
         raise HTTPException(status_code=resp.status_code, detail=f"Airflow error: {resp.text[:300]}")
+
+    logger.info(f"Airflow {resp.status_code} → {full_url} in {ms:.0f}ms")
     return resp.json()
 
 

@@ -22,15 +22,15 @@ import clsx from 'clsx'
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1 } } })
 
 // Kick off all three scorecard fetches immediately so tabs load instantly
-qc.prefetchQuery({ queryKey: ['scorecard', 'fte'],       queryFn: fetchFTEScorecard })
-qc.prefetchQuery({ queryKey: ['scorecard', 'vendor'],    queryFn: fetchVendorScorecard })
-qc.prefetchQuery({ queryKey: ['scorecard', 'hierarchy'], queryFn: fetchHierarchyScorecard })
+qc.prefetchQuery({ queryKey: ['scorecard', 'uat'], queryFn: fetchFTEScorecard })
+qc.prefetchQuery({ queryKey: ['scorecard', 'prd'], queryFn: fetchVendorScorecard })
+qc.prefetchQuery({ queryKey: ['scorecard', 'dev'], queryFn: fetchHierarchyScorecard })
 
 // ── Fixed tabs (always present, not closeable) ────────────────────────────────
 const FIXED_TABS = [
-  { id: 'fte',       label: 'UAT Dashboard',  icon: LayoutDashboard, badge: 'Scorecard' },
-  { id: 'vendor',    label: 'PRD Dashboard',  icon: Users,           badge: 'Scorecard' },
-  { id: 'hierarchy', label: 'DEV Dashboard',  icon: GitBranch,       badge: 'Scorecard' },
+  { id: 'uat', label: 'UAT Dashboard', icon: LayoutDashboard, badge: 'Scorecard' },
+  { id: 'prd', label: 'PRD Dashboard', icon: Users,           badge: 'Scorecard' },
+  { id: 'dev', label: 'DEV Dashboard', icon: GitBranch,       badge: 'Scorecard' },
   { id: 'ai',        label: 'My Dashboard',   icon: Sparkles,        badge: 'Dynamic'   },
   { id: 'favorites', label: 'Favorites',      icon: Star,            badge: 'Saved'     },
   { id: 'glossary',  label: 'Glossary',       icon: BookOpen,        badge: 'Reference' },
@@ -66,8 +66,10 @@ const FIXED_IDS = FIXED_TABS.map((t) => t.id)
 function loadTabOrder(customIds: string[]): string[] {
   const allIds = [...FIXED_IDS, ...customIds]
   try {
-    const saved: string[] = JSON.parse(localStorage.getItem('tab_order') || '[]')
-    const valid = saved.filter((id) => allIds.includes(id))
+    const raw: string[] = JSON.parse(localStorage.getItem('tab_order') || '[]')
+    // Migrate old tab IDs in stored order
+    const migrated = raw.map(id => id === 'fte' ? 'uat' : id === 'vendor' ? 'prd' : id === 'hierarchy' ? 'dev' : id)
+    const valid = migrated.filter((id) => allIds.includes(id))
     const missing = allIds.filter((id) => !valid.includes(id))
     return [...valid, ...missing]
   } catch {
@@ -133,11 +135,11 @@ function TabContent({
   }
 
   switch (tabId as FixedTabId) {
-    case 'fte':
+    case 'uat':
       return <UATDashboardTab tabLabel={tabLabel} onRegisterAddWidget={registerCb} onOpenDagTab={onOpenDagTab} />
-    case 'vendor':
+    case 'prd':
       return <PRDDashboardTab tabLabel={tabLabel} onRegisterAddWidget={registerCb} onOpenDagTab={onOpenDagTab} />
-    case 'hierarchy':
+    case 'dev':
       return <DEVDashboardTab tabLabel={tabLabel} onRegisterAddWidget={registerCb} onOpenDagTab={onOpenDagTab} />
     case 'favorites': return <FavoritesTab />
     case 'glossary':  return <GlossaryTab />
@@ -172,9 +174,13 @@ export default function App() {
       const stored = JSON.parse(localStorage.getItem('fixed_tab_labels') || '{}')
       // Migrate old default names → new defaults so renames are transparent
       if (stored['ai'] === 'AI Dashboard' || stored['ai'] === 'My Dashboard') delete stored['ai']
-      if (stored['fte'] === 'FTE Hierarchy' || stored['fte'] === 'UAT Dashboard') delete stored['fte']
-      if (stored['vendor'] === 'Vendor Summary' || stored['vendor'] === 'PRD Dashboard') delete stored['vendor']
-      if (stored['hierarchy'] === 'Hierarchy Summary' || stored['hierarchy'] === 'DEV Dashboard') delete stored['hierarchy']
+      // Migrate old tab IDs (fte→uat, vendor→prd, hierarchy→dev) — move any custom labels across
+      for (const [oldId, newId] of [['fte', 'uat'], ['vendor', 'prd'], ['hierarchy', 'dev']] as const) {
+        if (stored[oldId] !== undefined) { stored[newId] = stored[oldId]; delete stored[oldId] }
+      }
+      if (stored['uat'] === 'FTE Hierarchy' || stored['uat'] === 'UAT Dashboard') delete stored['uat']
+      if (stored['prd'] === 'Vendor Summary' || stored['prd'] === 'PRD Dashboard') delete stored['prd']
+      if (stored['dev'] === 'Hierarchy Summary' || stored['dev'] === 'DEV Dashboard') delete stored['dev']
       return stored
     } catch { return {} }
   })
@@ -269,7 +275,7 @@ export default function App() {
     e.stopPropagation()
     setAirflowTabs(prev => prev.filter(t => t.id !== id))
     setTabOrder(prev => { const next = prev.filter(tid => tid !== id); saveTabOrder(next); return next })
-    if (activeTabId === id) setActiveTabId('fte')
+    if (activeTabId === id) setActiveTabId('uat')
   }
 
   function startRename(tab: { id: string; label: string }, e: React.MouseEvent) {

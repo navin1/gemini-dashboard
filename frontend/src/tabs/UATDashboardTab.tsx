@@ -13,12 +13,13 @@ import { exportPDF } from '../api/pdf'
 import type { Widget, GridLayout, KPIData, ScorecardFTE, CustomKpi } from '../types'
 import { TabThemeContext } from '../context/TabThemeContext'
 
-const STORAGE_KEY = 'gd_ws_fte'
+const STORAGE_KEY = 'gd_ws_uat'
+const LEGACY_STORAGE_KEY = 'gd_ws_fte'
 const SEED_IDS = ['fte_spend_class', 'fte_capital_combo', 'fte_expense_combo', 'fte_table', 'fte_donut', 'fte_cap_exp_ftp', 'fte_airflow_dags']
 
 function loadState(): { widgets: Widget[]; customKpis: CustomKpi[] } {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
     return raw ? JSON.parse(raw) : { widgets: [], customKpis: [] }
   } catch { return { widgets: [], customKpis: [] } }
 }
@@ -106,7 +107,7 @@ interface Props {
 export function UATDashboardTab({ tabLabel, onRegisterAddWidget, onOpenDagTab }: Props) {
   const tabTheme = { headerBg: 'bg-yellow-50', headerBorder: 'border-yellow-100', airflowEnv: 'UAT', tabPrefix: 'UAT', onOpenDagTab }
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
-    queryKey: ['scorecard', 'fte'],
+    queryKey: ['scorecard', 'uat'],
     queryFn: fetchFTEScorecard,
     staleTime: 5 * 60 * 1000,
   })

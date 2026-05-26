@@ -1,9 +1,13 @@
+import logging
 import os
+import time
 from google.cloud import bigquery
 from auth import get_bq_credentials
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # Legacy single-table vars — kept for backward compat and scorecard query defaults
 PROJECT_ID = os.getenv("BIGQUERY_PROJECT_ID") or "mygclearning"
@@ -60,22 +64,31 @@ def build_schema_context(token: str | None = None) -> str:
 
 
 def run_query(sql: str, token: str | None = None) -> list[dict]:
-    client = _client(token)
-    job = client.query(sql)
-    rows = job.result()
-    result = []
-    for row in rows:
-        record = {}
-        for key, value in row.items():
-            # Convert non-serializable types
-            if hasattr(value, "isoformat"):
-                record[key] = value.isoformat()
-            elif value is None:
-                record[key] = None
-            else:
-                record[key] = value
-        result.append(record)
-    return result
+    preview = " ".join(sql.split())[:100]
+    logger.info(f"BQ start: {preview}…")
+    t0 = time.perf_counter()
+    try:
+        client = _client(token)
+        job = client.query(sql)
+        rows = job.result()
+        result = []
+        for row in rows:
+            record = {}
+            for key, value in row.items():
+                if hasattr(value, "isoformat"):
+                    record[key] = value.isoformat()
+                elif value is None:
+                    record[key] = None
+                else:
+                    record[key] = value
+            result.append(record)
+        ms = (time.perf_counter() - t0) * 1000
+        logger.info(f"BQ done:  {len(result)} rows in {ms:.0f}ms")
+        return result
+    except Exception as exc:
+        ms = (time.perf_counter() - t0) * 1000
+        logger.error(f"BQ error after {ms:.0f}ms [{type(exc).__name__}]: {exc} | query: {preview}…")
+        raise
 
 
 # ── Pre-built scorecard queries ───────────────────────────────────────────────

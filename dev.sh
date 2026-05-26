@@ -108,6 +108,7 @@ cmd_start() {
     cd "$BACKEND_DIR"
     PYTHONPATH="$BACKEND_DIR" \
     "$VENV/bin/uvicorn" main:app --reload --port "$BACKEND_PORT" \
+      --log-level "${UVICORN_LOG_LEVEL:-info}" \
       >> "$LOG_DIR/backend.log" 2>&1
   ) &
   BACKEND_PID=$!

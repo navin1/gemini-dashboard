@@ -13,12 +13,13 @@ import { exportPDF } from '../api/pdf'
 import type { Widget, GridLayout, ScorecardVendor, CustomKpi } from '../types'
 import { TabThemeContext } from '../context/TabThemeContext'
 
-const STORAGE_KEY = 'gd_ws_vendor'
+const STORAGE_KEY = 'gd_ws_prd'
+const LEGACY_STORAGE_KEY = 'gd_ws_vendor'
 const SEED_IDS = ['vendor_tier_breakdown', 'vendor_offshore', 'vendor_billtype_bar', 'vendor_table', 'vendor_spend_by_tier', 'vendor_monthly', 'vendor_cap_exp_ftp', 'vendor_resource_count', 'vendor_airflow_dags']
 
 function loadState(): { widgets: Widget[]; customKpis: CustomKpi[] } {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
     return raw ? JSON.parse(raw) : { widgets: [], customKpis: [] }
   } catch { return { widgets: [], customKpis: [] } }
 }
@@ -120,7 +121,7 @@ interface Props {
 export function PRDDashboardTab({ tabLabel, onRegisterAddWidget, onOpenDagTab }: Props) {
   const tabTheme = { headerBg: 'bg-green-50', headerBorder: 'border-green-100', airflowEnv: 'PROD', tabPrefix: 'PRD', onOpenDagTab }
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
-    queryKey: ['scorecard', 'vendor'],
+    queryKey: ['scorecard', 'prd'],
     queryFn: fetchVendorScorecard,
     staleTime: 5 * 60 * 1000,
   })

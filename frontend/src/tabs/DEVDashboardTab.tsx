@@ -13,12 +13,13 @@ import { exportPDF } from '../api/pdf'
 import type { Widget, GridLayout, ScorecardHierarchy, CustomKpi } from '../types'
 import { TabThemeContext } from '../context/TabThemeContext'
 
-const STORAGE_KEY = 'gd_ws_hierarchy'
+const STORAGE_KEY = 'gd_ws_dev'
+const LEGACY_STORAGE_KEY = 'gd_ws_hierarchy'
 const SEED_IDS = ['hier_tier_breakdown', 'hier_drill', 'hier_cat_monthly', 'hier_billtype_monthly', 'hier_airflow_dags']
 
 function loadState(): { widgets: Widget[]; customKpis: CustomKpi[] } {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
     return raw ? JSON.parse(raw) : { widgets: [], customKpis: [] }
   } catch { return { widgets: [], customKpis: [] } }
 }
@@ -88,7 +89,7 @@ interface Props {
 export function DEVDashboardTab({ tabLabel, onRegisterAddWidget, onOpenDagTab }: Props) {
   const tabTheme = { headerBg: 'bg-blue-50', headerBorder: 'border-blue-100', airflowEnv: 'Dev', tabPrefix: 'DEV', onOpenDagTab }
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
-    queryKey: ['scorecard', 'hierarchy'],
+    queryKey: ['scorecard', 'dev'],
     queryFn: fetchHierarchyScorecard,
     staleTime: 5 * 60 * 1000,
   })

@@ -58,7 +58,7 @@ async def _sse_stream(
 
 # ── per-scorecard fetch helpers ───────────────────────────────────────────────
 
-async def _fetch_fte(token):
+async def _fetch_uat(token):
     loop = asyncio.get_running_loop()
     q = bigquery_client.FTE_SCORECARD_QUERIES
     kpi, cap_exp, fte, hier, donut, cap_exp_ftp = await asyncio.gather(
@@ -79,7 +79,7 @@ async def _fetch_fte(token):
     }
 
 
-async def _fetch_vendor(token):
+async def _fetch_prd(token):
     loop = asyncio.get_running_loop()
     q = bigquery_client.VENDOR_SCORECARD_QUERIES
     vendor, offshore, billtype, monthly, tier_monthly, cap_exp_ftp, tier, vendor_rc, kpis = await asyncio.gather(
@@ -106,7 +106,7 @@ async def _fetch_vendor(token):
     }
 
 
-async def _fetch_hierarchy(token):
+async def _fetch_dev(token):
     loop = asyncio.get_running_loop()
     q = bigquery_client.HIERARCHY_SCORECARD_QUERIES
     s = bigquery_client.SHARED_QUERIES
@@ -126,37 +126,37 @@ async def _fetch_hierarchy(token):
 
 # ── SSE endpoints ─────────────────────────────────────────────────────────────
 
-@router.get("/fte")
-async def stream_fte(
+@router.get("/uat")
+async def stream_uat(
     request: Request,
     token: Optional[str] = Depends(get_request_token),
 ):
     return StreamingResponse(
-        _sse_stream(request, _fetch_fte, token),
+        _sse_stream(request, _fetch_uat, token),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
-@router.get("/vendor")
-async def stream_vendor(
+@router.get("/prd")
+async def stream_prd(
     request: Request,
     token: Optional[str] = Depends(get_request_token),
 ):
     return StreamingResponse(
-        _sse_stream(request, _fetch_vendor, token),
+        _sse_stream(request, _fetch_prd, token),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
-@router.get("/hierarchy")
-async def stream_hierarchy(
+@router.get("/dev")
+async def stream_dev(
     request: Request,
     token: Optional[str] = Depends(get_request_token),
 ):
     return StreamingResponse(
-        _sse_stream(request, _fetch_hierarchy, token),
+        _sse_stream(request, _fetch_dev, token),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

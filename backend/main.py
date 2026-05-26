@@ -1,12 +1,27 @@
+import logging
 import os
+import time
+import uuid
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 
 load_dotenv()
+
+_log_level = os.getenv("UVICORN_LOG_LEVEL", "info").upper()
+logging.basicConfig(
+    level=getattr(logging, _log_level, logging.INFO),
+    format="%(asctime)s [%(levelname)-8s] %(name)-24s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+# Suppress noisy httpx/httpcore connection-pool chatter; keep warnings+
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+logger = logging.getLogger(__name__)
 
 from database import engine, Base
 import models  # noqa: F401 — registers SQLAlchemy models
@@ -17,6 +32,25 @@ Base.metadata.create_all(bind=engine)
 seed()
 
 app = FastAPI(title="Gemini Workforce Dashboard", version="1.0.0")
+
+
+@app.middleware("http")
+async def _request_logger(request: Request, call_next):
+    req_id = uuid.uuid4().hex[:8]
+    qs = f"?{request.url.query}" if request.url.query else ""
+    logger.info(f"[{req_id}] → {request.method} {request.url.path}{qs}")
+    t0 = time.perf_counter()
+    try:
+        response = await call_next(request)
+        ms = (time.perf_counter() - t0) * 1000
+        log = logger.warning if response.status_code >= 400 else logger.info
+        log(f"[{req_id}] ← {request.method} {request.url.path} {response.status_code} {ms:.0f}ms")
+        return response
+    except Exception:
+        ms = (time.perf_counter() - t0) * 1000
+        logger.exception(f"[{req_id}] ✗ {request.method} {request.url.path} UNHANDLED {ms:.0f}ms")
+        raise
+
 
 # CORS — allow local dev origins + any CLOUD_RUN_URL set at deploy time
 _cors_origins = ["http://localhost:5173", "http://localhost:3000"]

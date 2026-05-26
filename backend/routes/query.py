@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -9,6 +10,7 @@ from auth import resolve_user, get_request_token
 import gemini_client
 import bigquery_client
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/query", tags=["query"])
 
 
@@ -60,14 +62,18 @@ async def run_nl_query(
     ).all()
     glossary_terms = [{"term": g.term, "definition": g.definition} for g in glossary]
 
+    logger.info(f"NL query: {req.nl_query!r}")
     try:
         widget_def = gemini_client.generate_widget(req.nl_query, glossary_terms)
+        logger.info(f"Gemini generated chart_type={widget_def.get('chart_type')} title={widget_def.get('title')!r}")
     except Exception as e:
+        logger.error(f"Gemini error for query {req.nl_query!r}: {e}")
         raise HTTPException(status_code=500, detail=f"Gemini error: {str(e)}")
 
     try:
         data = bigquery_client.run_query(widget_def["sql"], token)
     except Exception as e:
+        logger.error(f"BQ error after Gemini query: {e}")
         raise HTTPException(status_code=500, detail=f"BigQuery error: {str(e)}")
 
     return QueryResponse(
