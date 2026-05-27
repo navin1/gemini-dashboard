@@ -295,14 +295,7 @@ def _require_model():
 
 def generate_widget(nl_query: str, glossary_terms: list[dict] | None = None) -> dict:
     _require_model()
-    glossary_ctx = ""
-    if glossary_terms:
-        lines = "\n".join(f"  {t['term']} → {t['definition']}" for t in glossary_terms)
-        glossary_ctx = (
-            f"\n\nUser-defined aliases (substitute these when interpreting the request — "
-            f"treat each term as its mapped value in all contexts including table names, "
-            f"column aliases, and descriptions):\n{lines}"
-        )
+    glossary_ctx = _build_glossary_ctx(glossary_terms)
     prompt = f"{_build_system_prompt()}{glossary_ctx}\n\nUser request: {nl_query}"
     response = _model.generate_content(prompt)
     return _parse_json(response.text)
@@ -314,17 +307,7 @@ def chat_turn(
     glossary_terms: list[dict] | None = None,
 ) -> dict:
     _require_model()
-    primary = f"`{bigquery_client.TABLE_REFS[0]}`"
-    glossary_ctx = ""
-    if glossary_terms:
-        lines = "\n".join(f"  {t['term']} → {t['definition']}" for t in glossary_terms)
-        glossary_ctx = (
-            f"\n\nUser-defined aliases (apply these as substitutions when interpreting "
-            f"the user's message — treat each term as its mapped value in all contexts: "
-            f"table names, column names, abbreviations, and natural language references. "
-            f"For example, if 'src' → {primary}, then "
-            f"'SELECT * FROM src' means 'SELECT * FROM {primary}'):\n{lines}"
-        )
+    glossary_ctx = _build_glossary_ctx(glossary_terms)
 
     vertex_history = [
         Content(
@@ -342,10 +325,7 @@ def chat_turn(
 
 def refine_widget(current_sql: str, nl_modification: str, glossary_terms: list[dict] | None = None) -> dict:
     _require_model()
-    glossary_ctx = ""
-    if glossary_terms:
-        lines = "\n".join(f"  {t['term']}: {t['definition']}" for t in glossary_terms)
-        glossary_ctx = f"\n\nDomain glossary:\n{lines}"
+    glossary_ctx = _build_glossary_ctx(glossary_terms)
 
     prompt = (
         f"{_build_system_prompt()}{glossary_ctx}\n\n"
@@ -506,6 +486,56 @@ Final JSON:
 
 
 # ── Contextual distinct-value hints ───────────────────────────────────────────
+# ── Entity glossary (JSON file) ───────────────────────────────────────────────
+
+import pathlib as _pathlib
+
+_ENTITY_FILE = _pathlib.Path(__file__).parent / "glossary_entities.json"
+
+
+def _load_entity_glossary() -> list[dict]:
+    """Load hidden entity mappings from glossary_entities.json.
+
+    Returns an empty list if the file is missing or malformed so the app
+    never hard-fails because of a missing config file.
+    """
+    try:
+        return json.loads(_ENTITY_FILE.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def _build_glossary_ctx(glossary_terms: list[dict] | None) -> str:
+    """Build the glossary context string injected into every agent prompt.
+
+    For entries that carry a bq_column + bq_value the agent receives an exact
+    SQL filter fragment so it never has to guess the stored value.
+    Plain text entries (no bq_value) fall back to the original alias format.
+    """
+    if not glossary_terms:
+        return ""
+    lines = []
+    for t in glossary_terms:
+        bq_col = t.get("bq_column")
+        bq_val = t.get("bq_value")
+        if bq_col and bq_val:
+            fragment = f"{bq_col} = '{bq_val}'"
+            if t.get("bq_table"):
+                fragment = f"{t['bq_table']}.{fragment}"
+            lines.append(
+                f"  {t['term']} → {t['definition']} [SQL filter: {fragment}]"
+            )
+        else:
+            lines.append(f"  {t['term']} → {t['definition']}")
+    body = "\n".join(lines)
+    return (
+        f"\n\nUser-defined aliases (treat each term as its mapped value in all "
+        f"contexts — table names, column names, abbreviations. When a SQL filter "
+        f"is provided, use it exactly as written):\n{body}"
+    )
+
+
+# ── Contextual column hints ───────────────────────────────────────────────────
 # Maps keywords the user might say → (column_name, fetch_limit).
 # When a keyword appears in the message we pre-fetch distinct values for that
 # column so the model can write precise WHERE clauses without an extra tool call.
@@ -617,13 +647,7 @@ def agent_chat(
 ) -> dict:
     _require_model()
 
-    glossary_ctx = ""
-    if glossary_terms:
-        lines = "\n".join(f"  {t['term']} → {t['definition']}" for t in glossary_terms)
-        glossary_ctx = (
-            f"\n\nUser-defined aliases (treat each term as its mapped value in all contexts — "
-            f"table names, column names, abbreviations):\n{lines}"
-        )
+    glossary_ctx = _build_glossary_ctx(glossary_terms)
 
     contextual_hints = _build_contextual_hints(message, token)
 
@@ -660,13 +684,7 @@ async def agent_chat_stream(
 
     loop = asyncio.get_event_loop()
 
-    glossary_ctx = ""
-    if glossary_terms:
-        lines = "\n".join(f"  {t['term']} → {t['definition']}" for t in glossary_terms)
-        glossary_ctx = (
-            f"\n\nUser-defined aliases (treat each term as its mapped value in all contexts — "
-            f"table names, column names, abbreviations):\n{lines}"
-        )
+    glossary_ctx = _build_glossary_ctx(glossary_terms)
 
     yield {"type": "status", "message": "Preparing contextual hints…"}
     contextual_hints = await loop.run_in_executor(
