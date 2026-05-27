@@ -274,7 +274,7 @@ export function ChatPanel({ onAddWidget, onRegisterInject }: Props) {
               <div className={`max-w-[88%] flex flex-col gap-1.5 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                 <div className={`px-3 py-1.5 rounded-2xl text-sm leading-relaxed ${
                   msg.role === 'user'
-                    ? 'bg-brand-600 text-white rounded-br-sm'
+                    ? 'bg-brand-100 text-brand-900 rounded-br-sm'
                     : 'bg-slate-100 text-slate-800 rounded-bl-sm'
                 }`}>
                   {msg.loading ? (
