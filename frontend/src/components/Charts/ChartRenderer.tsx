@@ -18,6 +18,7 @@ function isMoney(key: string): boolean {
   return MONEY_RE.test(key) && !COUNT_RE.test(key)
 }
 
+// Axis ticks — abbreviated (900K, 10M)
 function fmtMoney(val: number) {
   if (Math.abs(val) >= 1_000_000) return `$${(val / 1_000_000).toFixed(2)}M`
   if (Math.abs(val) >= 1_000) return `$${(val / 1_000).toFixed(2)}K`
@@ -31,8 +32,15 @@ function fmtCount(val: number) {
   return Number.isInteger(val) ? val.toLocaleString() : val.toFixed(2)
 }
 
-function fmtVal(key: string, val: number): string {
-  return isMoney(key) ? fmtMoney(val) : fmtCount(val)
+// Tooltip — full comma-separated numbers (900,000 / $10,000,000.00)
+function fmtMoneyFull(val: number) {
+  return `$${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function fmtCountFull(val: number) {
+  return Number.isInteger(val)
+    ? val.toLocaleString('en-US')
+    : val.toLocaleString('en-US', { maximumFractionDigits: 2 })
 }
 
 function makeAxisFmt(keys: string[]): (val: unknown) => string {
@@ -44,7 +52,8 @@ function makeAxisFmt(keys: string[]): (val: unknown) => string {
 }
 
 function tooltipFmt(v: number, name: unknown): string {
-  return fmtVal(String(name ?? ''), v)
+  const key = String(name ?? '')
+  return isMoney(key) ? fmtMoneyFull(v) : fmtCountFull(v)
 }
 
 interface Props {
@@ -83,7 +92,10 @@ export function ChartRenderer({ chart_type, data, x_axis, y_axis, color_field, s
   const numericCols = allCols.filter(k => data.some(r => typeof r[k] === 'number'))
   const stringCols  = allCols.filter(k => data.some(r => typeof r[k] === 'string'))
 
-  const xKey = (x_axis && allCols.includes(x_axis)) ? x_axis : (stringCols[0] ?? allCols[0])
+  // Prefer x_axis if it points to a non-numeric column; fall back to first string col
+  const xKey = (x_axis && allCols.includes(x_axis) && !numericCols.includes(x_axis))
+    ? x_axis
+    : (stringCols[0] ?? allCols[0])
   const validY = y_axis.filter(k => allCols.includes(k) && data.some(r => typeof r[k] === 'number'))
   const yKeys = validY.length ? validY : numericCols.filter(k => k !== xKey).slice(0, 4)
   const primaryKeys = yKeys.filter((k) => k !== secondary_y)
@@ -96,7 +108,7 @@ export function ChartRenderer({ chart_type, data, x_axis, y_axis, color_field, s
       <div className="flex flex-wrap gap-4 py-4 justify-center">
         {Object.entries(row).map(([k, v]) => {
           const formatted = typeof v === 'number'
-            ? fmtVal(k, v)
+            ? (isMoney(k) ? fmtMoneyFull(v) : fmtCountFull(v))
             : String(v)
           return (
             <div key={k} className="text-center">
@@ -144,7 +156,7 @@ export function ChartRenderer({ chart_type, data, x_axis, y_axis, color_field, s
               <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
             ))}
           </Pie>
-          <Tooltip formatter={(v: number) => fmtVal(valKey, v)} contentStyle={{ fontSize: '10px' }} />
+          <Tooltip formatter={(v: number) => isMoney(valKey) ? fmtMoneyFull(v) : fmtCountFull(v)} contentStyle={{ fontSize: '10px' }} />
           <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '12px' }} />
         </PieChart>
       </ResponsiveContainer>
