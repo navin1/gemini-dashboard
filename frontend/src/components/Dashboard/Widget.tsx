@@ -357,6 +357,17 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             </>
           )}
 
+          {hasSql && widget.chart_type !== 'kpi' && (
+            <button
+              title={widget.live ? 'Stop live updates' : 'Enable live updates for this widget'}
+              onMouseDown={noDrag}
+              onClick={() => onUpdate?.({ ...widget, live: !widget.live })}
+              className={`p-1.5 transition-colors rounded ${widget.live ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100' : 'text-slate-400 hover:text-emerald-500'}`}
+            >
+              {widget.live ? <WifiOff size={13} /> : <Wifi size={13} />}
+            </button>
+          )}
+
           <button
             title={isCollapsed ? 'Expand widget' : 'Collapse widget'}
             onMouseDown={noDrag}
