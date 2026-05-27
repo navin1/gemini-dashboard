@@ -585,7 +585,7 @@ def _run_agent_loop(chat, user_prompt: str, token: str | None, max_tool_calls: i
 
     for _ in range(max_tool_calls):
         parts = response.candidates[0].content.parts
-        fc_parts = [p for p in parts if hasattr(p, "function_call") and p.function_call.name]
+        fc_parts = [p for p in parts if getattr(p, "function_call", None) and getattr(p.function_call, "name", None)]
         if not fc_parts:
             break
 
@@ -680,7 +680,7 @@ async def agent_chat_stream(
 
     for step in range(max_tool_calls):
         parts = response.candidates[0].content.parts
-        fc_parts = [p for p in parts if hasattr(p, "function_call") and p.function_call.name]
+        fc_parts = [p for p in parts if getattr(p, "function_call", None) and getattr(p.function_call, "name", None)]
         if not fc_parts:
             break
 
