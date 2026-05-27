@@ -378,15 +378,45 @@ async def dag_code(
     env: str = Query(...),
     token: Optional[str] = Depends(get_request_token),
 ):
-    """Return DAG Python source code from Airflow's /api/v1/dags/{dag_id}/code."""
+    """Return DAG Python source code via Airflow's /api/v1/dagSources/{file_token}.
+
+    Airflow 2.x does not expose /api/v1/dags/{dag_id}/code. The correct flow is:
+      1. GET /api/v1/dags/{dag_id}          → extract file_token
+      2. GET /api/v1/dagSources/{file_token} → returns the raw Python source
+    """
     base_url = _resolve_url(env)
     headers  = await _airflow_headers(token, audience=base_url)
-    full_url = f"{base_url}/api/v1/dags/{dag_id}/code"
-    logger.info(f"Airflow GET {full_url}")
-    t0 = time.perf_counter()
+
+    # Step 1 — get file_token from dag metadata
+    dag_url = f"{base_url}/api/v1/dags/{dag_id}"
+    logger.info(f"Airflow GET {dag_url}")
     try:
         async with httpx.AsyncClient(timeout=20.0, verify=_SSL_VERIFY) as client:
-            resp = await client.get(full_url, headers=headers)
+            dag_resp = await client.get(dag_url, headers=headers)
+    except httpx.ConnectError as exc:
+        raise HTTPException(status_code=502, detail=f"Cannot reach Airflow: {exc}")
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Airflow request timed out")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Airflow request failed: {exc}")
+
+    if not dag_resp.is_success:
+        logger.warning(f"Airflow {dag_resp.status_code} → {dag_url}: {dag_resp.text[:200]}")
+        raise HTTPException(status_code=dag_resp.status_code, detail=f"Airflow error: {dag_resp.text[:300]}")
+
+    dag_data   = dag_resp.json()
+    file_token = dag_data.get("file_token")
+    if not file_token:
+        raise HTTPException(status_code=404, detail=f"No file_token found for DAG '{dag_id}'")
+
+    # Step 2 — fetch source code using file_token
+    src_url = f"{base_url}/api/v1/dagSources/{file_token}"
+    logger.info(f"Airflow GET {src_url}")
+    t0 = time.perf_counter()
+    try:
+        src_headers = {**headers, "Accept": "text/plain"}
+        async with httpx.AsyncClient(timeout=20.0, verify=_SSL_VERIFY) as client:
+            resp = await client.get(src_url, headers=src_headers)
         ms = (time.perf_counter() - t0) * 1000
     except httpx.ConnectError as exc:
         raise HTTPException(status_code=502, detail=f"Cannot reach Airflow: {exc}")
@@ -394,11 +424,12 @@ async def dag_code(
         raise HTTPException(status_code=504, detail="Airflow request timed out")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Airflow request failed: {exc}")
+
     if not resp.is_success:
-        logger.warning(f"Airflow {resp.status_code} → {full_url} in {ms:.0f}ms: {resp.text[:200]}")
+        logger.warning(f"Airflow {resp.status_code} → {src_url} in {ms:.0f}ms: {resp.text[:200]}")
         raise HTTPException(status_code=resp.status_code, detail=f"Airflow error: {resp.text[:300]}")
-    logger.info(f"Airflow {resp.status_code} → {full_url} in {ms:.0f}ms")
-    # Airflow 2.x returns plain text; some versions wrap in JSON {content: "..."}
+
+    logger.info(f"Airflow {resp.status_code} → {src_url} in {ms:.0f}ms")
     if "application/json" in resp.headers.get("content-type", ""):
         code = resp.json().get("content", "")
     else:
