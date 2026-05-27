@@ -4,6 +4,8 @@ import logging
 
 import google.auth
 import google.auth.transport.requests
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import vertexai
 from vertexai.generative_models import GenerativeModel, Content, Part, Tool, FunctionDeclaration
 
@@ -541,6 +543,33 @@ def _build_agent_model():
     )
 
 
+def _execute_bq_call(fc, token: str | None) -> Part:
+    """Run one BQ function call and return the function-response Part."""
+    sql = fc.args.get("sql", "")
+    logger.info(f"Agent tool call: sql={sql[:120]!r}…")
+    try:
+        results = bigquery_client.run_query(sql, token)
+        total = len(results)
+        resp_data: dict = {
+            "status": "success",
+            "row_count": total,
+            "data": results[:50],
+        }
+        if total > 50:
+            resp_data["truncated"] = True
+            resp_data["note"] = (
+                f"Results truncated to 50 of {total} total rows. "
+                "Add more specific WHERE filters or GROUP BY to reduce the result set."
+            )
+            logger.warning(f"Agent tool: truncated {total}→50 rows for sql={sql[:80]!r}…")
+        else:
+            logger.info(f"Agent tool result: {total} rows")
+    except Exception as exc:
+        resp_data = {"status": "error", "error": str(exc)}
+        logger.warning(f"Agent tool error: {exc}")
+    return Part.from_function_response(name=fc.name, response=resp_data)
+
+
 def _run_agent_loop(chat, user_prompt: str, token: str | None, max_tool_calls: int) -> dict:
     """Core synchronous agent loop. Returns the final parsed JSON dict."""
     response = chat.send_message(user_prompt)
@@ -551,26 +580,9 @@ def _run_agent_loop(chat, user_prompt: str, token: str | None, max_tool_calls: i
         if not fc_parts:
             break
 
-        fn_responses = []
-        for p in fc_parts:
-            fc = p.function_call
-            sql = fc.args.get("sql", "")
-            logger.info(f"Agent tool call: run_bigquery_query sql={sql[:120]!r}…")
-            try:
-                results = bigquery_client.run_query(sql, token)
-                resp_data = {
-                    "status": "success",
-                    "row_count": len(results),
-                    "data": results[:50],
-                }
-                logger.info(f"Agent tool result: {len(results)} rows")
-            except Exception as exc:
-                resp_data = {"status": "error", "error": str(exc)}
-                logger.warning(f"Agent tool error: {exc}")
-
-            fn_responses.append(
-                Part.from_function_response(name=fc.name, response=resp_data)
-            )
+        # Run all tool calls in this round concurrently
+        with ThreadPoolExecutor(max_workers=len(fc_parts)) as pool:
+            fn_responses = list(pool.map(lambda p: _execute_bq_call(p.function_call, token), fc_parts))
 
         response = chat.send_message(fn_responses)
 
@@ -625,8 +637,6 @@ async def agent_chat_stream(
         {"type": "result",  "data": dict}    — final parsed JSON (one, last event)
         {"type": "error",   "message": str}  — on unrecoverable failure
     """
-    import asyncio
-
     _require_model()
 
     loop = asyncio.get_event_loop()
@@ -665,25 +675,14 @@ async def agent_chat_stream(
         if not fc_parts:
             break
 
-        yield {"type": "status", "message": f"Querying BigQuery… (step {step + 1})"}
+        n = len(fc_parts)
+        label = f"{n} queries" if n > 1 else "query"
+        yield {"type": "status", "message": f"Running {label} in parallel… (step {step + 1})"}
 
-        fn_responses = []
-        for p in fc_parts:
-            fc = p.function_call
-            sql = fc.args.get("sql", "")
-            logger.info(f"Agent stream tool call: sql={sql[:120]!r}…")
-
-            def _run_bq(s=sql):
-                try:
-                    results = bigquery_client.run_query(s, token)
-                    logger.info(f"Agent stream tool result: {len(results)} rows")
-                    return {"status": "success", "row_count": len(results), "data": results[:50]}
-                except Exception as exc:
-                    logger.warning(f"Agent stream tool error: {exc}")
-                    return {"status": "error", "error": str(exc)}
-
-            resp_data = await loop.run_in_executor(None, _run_bq)
-            fn_responses.append(Part.from_function_response(name=fc.name, response=resp_data))
+        # Fire all tool calls in this round concurrently
+        fn_responses = list(await asyncio.gather(
+            *[loop.run_in_executor(None, _execute_bq_call, p.function_call, token) for p in fc_parts]
+        ))
 
         response = await loop.run_in_executor(None, chat.send_message, fn_responses)
 
