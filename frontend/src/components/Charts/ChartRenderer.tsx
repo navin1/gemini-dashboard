@@ -125,9 +125,19 @@ export function ChartRenderer({ chart_type, data, x_axis, y_axis, color_field, s
             nameKey={labelKey}
             cx="50%"
             cy="50%"
-            innerRadius={chart_type === 'donut' ? '55%' : 0}
-            outerRadius="70%"
-            label={({ name, percent }) => `${name} (${(percent * 100).toFixed(2)}%)`}
+            innerRadius={chart_type === 'donut' ? '40%' : 0}
+            outerRadius="100%"
+            label={({ cx, cy, midAngle, outerRadius, name, percent }: { cx: number; cy: number; midAngle: number; outerRadius: number; name: string; percent: number }) => {
+              const RAD = Math.PI / 180
+              const r = outerRadius + 14
+              const x = cx + r * Math.cos(-midAngle * RAD)
+              const y = cy + r * Math.sin(-midAngle * RAD)
+              return (
+                <text x={x} y={y} fill="#555" fontSize={10} textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central">
+                  {`${name} (${(percent * 100).toFixed(2)}%)`}
+                </text>
+              )
+            }}
             labelLine={true}
           >
             {data.map((_, i) => (
