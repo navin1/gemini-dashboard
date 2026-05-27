@@ -196,7 +196,7 @@ Respond ONLY with a raw JSON object (no markdown fences, no explanation):
 }}
 
 Chart type guide:
-  bar           - grouped bars comparing categories
+  bar           - DEFAULT for any category vs number query. Vertical bars, X=category (string), Y=number.
   stacked_bar   - stacked bars for part-of-whole (e.g. Capital+Expense per month)
   line          - trend over time
   combo         - bar + line on same chart (e.g. spend bars + FTE line)
@@ -205,6 +205,12 @@ Chart type guide:
   table         - detailed tabular data (best for >5 columns)
   kpi           - one or more summary metrics (e.g. total spend, headcount, %). Use when user asks for a number/stat/metric rather than a trend or comparison. The SQL should return a single row with named columns — each column becomes one KPI card.
   horizontal_bar- ranked list (best for vendor/manager comparisons)
+
+x_axis / y_axis rules (CRITICAL):
+  - x_axis MUST be the categorical/string column (vendor name, project, month label, resource type, etc.)
+  - y_axis MUST be the numeric/measure column(s) (spend, count, FTE, amount, etc.)
+  - NEVER assign a numeric column to x_axis for bar, stacked_bar, line, or combo charts
+  - When the result has exactly 1 string column and 1 numeric column, always use bar chart with x_axis=string column, y_axis=[numeric column]
 """
 
 
@@ -250,6 +256,7 @@ Rules:
 - Always maintain context from the conversation history — "what about last month?" refers to the previous query.
 - If you cannot answer (e.g., column doesn't exist), explain why in the text field and set intent="explain".
 - Always include exactly 2-3 suggested_questions: short, specific follow-up questions a user might naturally ask next, grounded in the current answer and dataset context.
+- x_axis MUST be the categorical/string column. y_axis MUST be the numeric column(s). NEVER put a numeric column in x_axis for bar/line/combo charts. Default chart type for 1 string + 1 number column is "bar".
 """
 
 
@@ -407,6 +414,7 @@ Rules:
 - intent="chart" → always include widget with working SQL.
 - intent="both" → include both text explanation and widget.
 - Always include exactly 2-3 suggested_questions grounded in the data you just found.
+- x_axis MUST be the categorical/string column (vendor, project, month, resource type, etc.). y_axis MUST be the numeric/measure column(s). NEVER assign a numeric column to x_axis for bar, stacked_bar, line, or combo charts. Default chart type for 1 string + 1 numeric column is "bar".
 
 --- FEW-SHOT EXAMPLES ---
 
