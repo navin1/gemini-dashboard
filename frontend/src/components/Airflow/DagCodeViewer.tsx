@@ -40,7 +40,7 @@ export default function DagCodeViewer({ code, loading, error, dagId, onSendToAge
     <div style={{ display: 'flex', flexDirection: 'column', background: '#282c34', flex: 1, minHeight: 0, overflow: 'hidden', borderRadius: 8, border: '1px solid #374151' }}>
       {/* toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', background: '#21252b', borderBottom: '1px solid #374151', flexShrink: 0 }}>
-        <span style={{ fontSize: 11, color: '#6b7280', fontFamily: 'monospace' }}>dag.py</span>
+        <span style={{ fontSize: 11, color: '#e2e8f0', fontFamily: 'monospace', fontWeight: 700 }}>{dagId ? `${dagId}.py` : 'dag.py'}</span>
         {code && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             {onSendToAgent && (
