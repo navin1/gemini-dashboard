@@ -220,7 +220,7 @@ export default function DagDetailTab({ dagId, env, onOpenSqlTab, onSendToAgent }
           {/* DAG code — fills remaining left-panel height */}
           <div className="flex flex-col flex-1 min-h-0">
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5 px-0.5">DAG Code</p>
-            <div className="flex-1 min-h-0">
+            <div className="flex flex-col flex-1 min-h-0">
               <DagCodeViewer
                 code={code}
                 loading={codeLoading}
