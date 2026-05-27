@@ -183,7 +183,7 @@ export default function DagDetailTab({ dagId, env, onOpenSqlTab, onSendToAgent }
           {triggerMsg && <span className="text-xs text-brand-600 mt-0.5">{triggerMsg}</span>}
         </div>
         <div className="flex items-center gap-2">
-          {!/prod/i.test(env) && (
+          {!/prd/i.test(env) && (
             <button
               onClick={handleTrigger}
               disabled={triggering}

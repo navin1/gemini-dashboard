@@ -39,7 +39,7 @@ const FIXED_TABS = [
 const TAB_ORDER_VERSION = 3
 
 function envToPrefix(env: string): string {
-  const map: Record<string, string> = { UAT: 'UAT', PROD: 'PRD', Dev: 'DEV' }
+  const map: Record<string, string> = { UAT: 'UAT', PRD: 'PRD', DEV: 'DEV' }
   return map[env] ?? env
 }
 

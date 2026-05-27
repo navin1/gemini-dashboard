@@ -1,18 +1,18 @@
 [
   {
     "term": "Krishna",
-    "definition": "Krishna Ghjhkjhk, Resource VP of Enterprise Data (ED) Team",
+    "definition": "Krishnaveni Gnanasekaran is the Resource VP",
     "entity_type": "person",
-    "bq_table": "project.dataset.resources",
-    "bq_column": "resource_name",
-    "bq_value": "Krishna Ghjhkjhk"
+    "bq_table": "mygclearning.test.one",
+    "bq_column": "ResourceVP",
+    "bq_value": "Krishnaveni Gnanasekaran"
   },
   {
-    "term": "ED Team",
-    "definition": "Enterprise Data team across all vendors",
-    "entity_type": "team",
-    "bq_table": "project.dataset.resources",
-    "bq_column": "team_name",
-    "bq_value": "Enterprise Data"
+    "term": "Vinod",
+    "definition": "Vinod K Muthineni is the Resource Manager",
+    "entity_type": "person",
+    "bq_table": "mygclearning.test.one",
+    "bq_column": "Resource_Manager",
+    "bq_value": "Vinod K Muthineni"
   }
 ]

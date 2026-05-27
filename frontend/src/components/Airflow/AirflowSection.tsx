@@ -138,7 +138,7 @@ export default function AirflowSection({ live, onLiveStatusChange, onRegisterRef
     return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
   })
 
-  const thClass = 'px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-brand-600 whitespace-nowrap'
+  const thClass = 'px-3 py-2 text-left text-xs font-semibold text-gray-600 cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap'
 
   return (
     <div className="flex flex-col gap-1 h-full">
@@ -151,15 +151,15 @@ export default function AirflowSection({ live, onLiveStatusChange, onRegisterRef
       )}
 
       {/* Table */}
-      <div className="overflow-auto flex-1 rounded border border-gray-100">
+      <div className="overflow-auto flex-1 rounded border border-gray-200">
         {!airflowEnv && (
-          <div className="text-sm text-gray-400 py-6 text-center">No Airflow environment configured for this tab.</div>
+          <div className="text-xs text-gray-400 py-6 text-center">No Airflow environment configured for this tab.</div>
         )}
         {airflowEnv && dags.length === 0 && !fetching && !fetchError && (
-          <div className="text-sm text-gray-400 py-6 text-center">No DAGs configured. Add DAG IDs to AIRFLOW_DAGS in .env</div>
+          <div className="text-xs text-gray-400 py-6 text-center">No DAGs configured. Add DAG IDs to AIRFLOW_DAGS in .env</div>
         )}
         {airflowEnv && (dags.length > 0 || fetching) && (
-          <table className="w-full text-sm">
+          <table className="w-full text-xs">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className={thClass} onClick={() => toggleSort('dag_id')}>
@@ -174,18 +174,18 @@ export default function AirflowSection({ live, onLiveStatusChange, onRegisterRef
               </tr>
             </thead>
             <tbody>
-              {sorted.map(dag => (
-                <tr key={dag.dag_id} className="border-t border-gray-100 hover:bg-gray-50 transition-colors">
-                  <td className="px-3 py-2.5">
+              {sorted.map((dag, i) => (
+                <tr key={dag.dag_id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                  <td className="px-3 py-2 text-gray-700">
                     <button
                       onClick={() => onOpenDagTab(dag.dag_id, airflowEnv)}
-                      className="text-brand-600 hover:text-brand-700 hover:underline font-medium text-sm text-left"
+                      className="text-gray-700 underline hover:text-gray-900 text-xs text-left"
                     >
                       {dag.dag_id}
                     </button>
                   </td>
-                  <td className="px-3 py-2.5"><StateBadge state={dag.state} /></td>
-                  <td className="px-3 py-2.5 text-gray-500 text-xs">{formatTime(dag.last_run_time)}</td>
+                  <td className="px-3 py-2"><StateBadge state={dag.state} /></td>
+                  <td className="px-3 py-2 text-gray-700">{formatTime(dag.last_run_time)}</td>
                 </tr>
               ))}
             </tbody>
