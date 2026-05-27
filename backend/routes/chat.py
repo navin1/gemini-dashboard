@@ -10,6 +10,9 @@ import gemini_client
 import bigquery_client
 import json
 
+# Hidden system entity mappings loaded once at import time
+_ENTITY_GLOSSARY: list[dict] = gemini_client._load_entity_glossary()
+
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
@@ -40,7 +43,7 @@ async def chat(
     glossary = db.query(GlossaryTerm).filter(
         (GlossaryTerm.is_default == True) | (GlossaryTerm.user_id == user["id"])
     ).all()
-    glossary_terms = [{"term": g.term, "definition": g.definition} for g in glossary]
+    glossary_terms = [{"term": g.term, "definition": g.definition} for g in glossary] + _ENTITY_GLOSSARY
 
     try:
         result = gemini_client.agent_chat(
@@ -89,7 +92,7 @@ async def chat_stream(
     glossary = db.query(GlossaryTerm).filter(
         (GlossaryTerm.is_default == True) | (GlossaryTerm.user_id == user["id"])
     ).all()
-    glossary_terms = [{"term": g.term, "definition": g.definition} for g in glossary]
+    glossary_terms = [{"term": g.term, "definition": g.definition} for g in glossary] + _ENTITY_GLOSSARY
 
     async def event_stream() -> AsyncGenerator[str, None]:
         try:
