@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Star, ChevronDown, ChevronUp, Maximize2, Code2, Sparkles, Loader2, Pencil, CornerUpRight, CopyPlus, AlertCircle } from 'lucide-react'
+import { X, Star, ChevronDown, ChevronUp, Maximize2, Code2, Sparkles, Loader2, Pencil, CornerUpRight, CopyPlus, Wifi, WifiOff, AlertCircle } from 'lucide-react'
 import { ChartRenderer } from '../Charts/ChartRenderer'
 import { DataTable } from '../DataTable/DataTable'
 import { refineWidget } from '../../api/query'
@@ -137,7 +137,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
     setRefineError(null)
     try {
       const result = await refineWidget(widget.sql, nlInput.trim())
-      onUpdate?.({ ...widget, ...result, id: widget.id, layout: widget.layout, prevH: widget.prevH, error: result.error ?? undefined })
+      onUpdate?.({ ...widget, ...result, id: widget.id, layout: widget.layout, prevH: widget.prevH })
       setNlInput('')
       setShowSql(false)
     } catch (e) {
@@ -279,6 +279,17 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             <Code2 size={13} />
           </button>
 
+          {hasSql && widget.chart_type !== 'kpi' && (
+            <button
+              title={widget.live ? 'Stop live updates' : 'Enable live updates for this widget'}
+              onMouseDown={noDrag}
+              onClick={() => onUpdate?.({ ...widget, live: !widget.live })}
+              className={`p-1.5 transition-colors rounded ${widget.live ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100' : 'text-slate-400 hover:text-emerald-500'}`}
+            >
+              {widget.live ? <WifiOff size={13} /> : <Wifi size={13} />}
+            </button>
+          )}
+
           <button
             title={isCollapsed ? 'Expand widget' : 'Collapse widget'}
             onMouseDown={noDrag}
@@ -320,26 +331,24 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
                 </div>
               )}
 
-              {!showSql && (
-                <div className="flex-1 overflow-auto p-3 min-h-0">
-                  {showData ? (
-                    <DataTable data={widget.data} />
-                  ) : (
-                    <ChartRenderer
-                      chart_type={widget.chart_type}
-                      data={widget.data}
-                      x_axis={widget.x_axis}
-                      y_axis={widget.y_axis}
-                      color_field={widget.color_field}
-                      stacked={widget.stacked}
-                      dual_axis={widget.dual_axis}
-                      secondary_y={widget.secondary_y}
-                      height={220}
-                    />
-                  )}
-                </div>
+          {!showSql && (
+            <div className="flex-1 overflow-auto p-3 min-h-0">
+              {showData ? (
+                <DataTable data={widget.data} />
+              ) : (
+                <ChartRenderer
+                  chart_type={widget.chart_type}
+                  data={widget.data}
+                  x_axis={widget.x_axis}
+                  y_axis={widget.y_axis}
+                  color_field={widget.color_field}
+                  stacked={widget.stacked}
+                  dual_axis={widget.dual_axis}
+                  secondary_y={widget.secondary_y}
+                  height={220}
+                />
               )}
-            </>
+            </div>
           )}
 
           {/* SQL panel */}
@@ -391,6 +400,8 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
                 </div>
               )}
             </div>
+          )}
+            </>
           )}
         </>
       )}
