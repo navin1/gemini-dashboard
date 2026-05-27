@@ -118,13 +118,13 @@ export function ChartRenderer({ chart_type, data, x_axis, y_axis, color_field, s
     const labelKey = xKey
     return (
       <ResponsiveContainer width="100%" height={height}>
-        <PieChart>
+        <PieChart margin={{ top: 10, right: 55, bottom: 10, left: 55 }}>
           <Pie
             data={data}
             dataKey={valKey}
             nameKey={labelKey}
             cx="50%"
-            cy="50%"
+            cy="45%"
             innerRadius={chart_type === 'donut' ? '40%' : 0}
             outerRadius="100%"
             label={({ cx, cy, midAngle, outerRadius, name, percent }: { cx: number; cy: number; midAngle: number; outerRadius: number; name: string; percent: number }) => {
@@ -145,7 +145,7 @@ export function ChartRenderer({ chart_type, data, x_axis, y_axis, color_field, s
             ))}
           </Pie>
           <Tooltip formatter={(v: number) => fmtVal(valKey, v)} contentStyle={{ fontSize: '10px' }} />
-          <Legend wrapperStyle={{ fontSize: '10px' }} />
+          <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '12px' }} />
         </PieChart>
       </ResponsiveContainer>
     )
