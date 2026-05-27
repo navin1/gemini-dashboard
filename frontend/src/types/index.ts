@@ -12,6 +12,8 @@ export interface Widget {
   sql: string
   data: Record<string, unknown>[]
   nl_query?: string
+  live?: boolean          // when true, widget polls for live data updates
+  error?: string          // set when the widget encountered a SQL or render error
   prevH?: number          // stored when widget is collapsed so height can be restored
   homeTabId?: string      // set when widget is moved away from its origin tab
   // react-grid-layout position

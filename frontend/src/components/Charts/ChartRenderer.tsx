@@ -124,7 +124,7 @@ export function ChartRenderer({ chart_type, data, x_axis, y_axis, color_field, s
             dataKey={valKey}
             nameKey={labelKey}
             cx="50%"
-            cy="50%"
+            cy="40%"
             innerRadius={chart_type === 'donut' ? '40%' : 0}
             outerRadius="100%"
             label={({ cx, cy, midAngle, outerRadius, name, percent }: { cx: number; cy: number; midAngle: number; outerRadius: number; name: string; percent: number }) => {
