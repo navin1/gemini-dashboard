@@ -10,3 +10,8 @@ export async function refineWidget(sql: string, nl_modification: string): Promis
   const { data } = await client.post<QueryResponse>('/query/refine', { sql, nl_modification })
   return data
 }
+
+export async function optimizeSql(sql: string): Promise<string> {
+  const { data } = await client.post<{ optimized_sql: string }>('/query/optimize-sql', { sql })
+  return data.optimized_sql
+}

@@ -9,10 +9,9 @@ interface Props {
   env: string
   runId?: string
   operatorFull?: string
-  onAnalyzeWithGemini?: (sql: string) => void
 }
 
-export default function SqlTab({ dagId, taskId, env, runId, operatorFull, onAnalyzeWithGemini }: Props) {
+export default function SqlTab({ dagId, taskId, env, runId, operatorFull }: Props) {
   const [result, setResult]   = useState<TaskSqlResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
@@ -37,7 +36,6 @@ export default function SqlTab({ dagId, taskId, env, runId, operatorFull, onAnal
         sqlResult={result}
         loading={loading}
         error={error}
-        onAnalyzeWithGemini={onAnalyzeWithGemini}
       />
     </div>
   )

@@ -137,9 +137,6 @@ function TabContent({
         env={airflowTab.env}
         runId={airflowTab.runId}
         operatorFull={airflowTab.operatorFull}
-        onAnalyzeWithGemini={(sql) => {
-          if (_injectSqlToChat) _injectSqlToChat(sql)
-        }}
       />
     )
   }

@@ -79,7 +79,7 @@ export function DataTable({ data, maxRows = 100 }: Props) {
           </thead>
           <tbody>
             {visible.map((row, i) => (
-              <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+              <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
                 {headers.map((h) => (
                   <td key={h} className={`px-3 py-2 text-gray-700 whitespace-nowrap ${numericCols.has(h) ? 'text-right' : ''}`}>
                     {fmtCell(row[h], h)}

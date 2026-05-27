@@ -360,6 +360,66 @@ def refine_widget(current_sql: str, nl_modification: str, glossary_terms: list[d
     return _parse_json(response.text)
 
 
+_OPTIMIZE_SQL_PROMPT = """\
+You are a senior Google Cloud data engineer and SQL architect specializing in BigQuery.
+Your task has two equally important parts: SELF-DOCUMENTATION and PERFORMANCE OPTIMIZATION.
+
+━━━ PART 1 — SELF-DOCUMENTATION ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Add professional, production-grade documentation using only -- line comments (never /* */):
+
+A) FILE-LEVEL HEADER  (place at the very top, before any SQL)
+   Format exactly as shown — fill in every field based on what the SQL actually does:
+
+   -- ============================================================
+   -- Purpose : <one sentence: what business question this answers>
+   -- Source  : <comma-separated list of source tables/views read>
+   -- Output  : <what the result set / destination table represents>
+   -- Notes   : <key assumptions, partition filters, or edge cases>
+   -- ============================================================
+
+B) STATEMENT-LEVEL ANNOTATIONS
+   Add a single -- comment immediately above each:
+   - WITH clause / individual CTE definition
+   - SELECT, INSERT, UPDATE, DELETE, MERGE, or CREATE statement
+   - Significant JOIN that is non-obvious in purpose
+   Each annotation must describe the BUSINESS LOGIC (the "why"), not just
+   restate the syntax. Keep each annotation <= 120 characters.
+
+━━━ PART 2 — PERFORMANCE OPTIMIZATION ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Optimize the SQL for BigQuery cost and speed:
+   - Apply partition and cluster pruning filters as early as possible
+   - Eliminate SELECT *; reference only required columns
+   - Push predicates before JOINs to reduce shuffle
+   - Replace correlated subqueries with CTEs
+   - Prefer QUALIFY over nested subqueries for window-function filters
+   - Use APPROX_COUNT_DISTINCT where exact cardinality is not required
+
+━━━ RULES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+- Return ONLY the final documented + optimized SQL. No explanations, no markdown.
+- Preserve the original query's logic and result set exactly.
+- Every CTE and every top-level statement must have its annotation — no exceptions.
+- If the query is already optimal, still apply full documentation (Part 1 is mandatory).
+
+SQL:
+"""
+
+
+def optimize_sql(sql: str) -> str:
+    import re
+    _require_model()
+    response = _model.generate_content(_OPTIMIZE_SQL_PROMPT + sql)
+    text = _response_text(response)
+    if not text:
+        raise ValueError("Vertex AI returned an empty response.")
+    text = re.sub(r"^```sql\s*\n?", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^```\s*\n?", "", text)
+    text = re.sub(r"\s*```\s*$", "", text)
+    return text.strip()
+
+
 _BQ_TOOL = Tool(function_declarations=[
     FunctionDeclaration(
         name="run_bigquery_query",

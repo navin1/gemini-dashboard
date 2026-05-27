@@ -175,7 +175,7 @@ export default function AirflowSection({ live, onLiveStatusChange, onRegisterRef
             </thead>
             <tbody>
               {sorted.map((dag, i) => (
-                <tr key={dag.dag_id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                <tr key={dag.dag_id} className={i % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
                   <td className="px-3 py-2 text-gray-700">
                     <button
                       onClick={() => onOpenDagTab(dag.dag_id, airflowEnv)}

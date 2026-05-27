@@ -18,6 +18,14 @@ class SqlRequest(BaseModel):
     sql: str
 
 
+class OptimizeSqlRequest(BaseModel):
+    sql: str
+
+
+class OptimizeSqlResponse(BaseModel):
+    optimized_sql: str
+
+
 @router.post("/sql", response_model=QueryResponse)
 async def run_sql_query(
     req: SqlRequest,
@@ -94,6 +102,20 @@ async def run_nl_query(
         ai_description=widget_def.get("ai_description", ""),
         data=data,
     )
+
+
+@router.post("/optimize-sql", response_model=OptimizeSqlResponse)
+async def optimize_sql_query(req: OptimizeSqlRequest):
+    try:
+        optimized = gemini_client.optimize_sql(req.sql)
+    except Exception as e:
+        msg = str(e)
+        if "not initialised" in msg or "VERTEX_AI_PROJECT" in msg:
+            raise HTTPException(status_code=503, detail="Vertex AI is not configured. Set VERTEX_AI_PROJECT in .env and ensure credentials are available.")
+        if "PERMISSION_DENIED" in msg or "permission denied" in msg.lower():
+            raise HTTPException(status_code=403, detail="Vertex AI access denied. Ensure your account or service account has roles/aiplatform.user.")
+        raise HTTPException(status_code=500, detail=f"AI error: {msg}")
+    return OptimizeSqlResponse(optimized_sql=optimized)
 
 
 @router.post("/refine", response_model=QueryResponse)
