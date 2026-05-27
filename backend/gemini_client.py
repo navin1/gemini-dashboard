@@ -255,8 +255,23 @@ Rules:
 
 # ── Response parsing ───────────────────────────────────────────────────────────
 
+def _response_text(response) -> str:
+    """Safely extract text from a Vertex AI response.
+
+    response.text raises ValueError when the candidate contains only
+    function-call parts and no text part. Guard against that and also
+    against None so callers always receive a plain str.
+    """
+    try:
+        return (response.text or "").strip()
+    except (ValueError, AttributeError):
+        return ""
+
+
 def _parse_json(raw: str) -> dict:
     raw = raw.strip()
+    if not raw:
+        raise ValueError("Model returned an empty response")
     if raw.startswith("```"):
         parts = raw.split("```")
         raw = parts[1]
@@ -601,6 +616,12 @@ def _execute_bq_call(fc, token: str | None) -> Part:
     return Part.from_function_response(name=fc.name, response=resp_data)
 
 
+_FINALIZE_PROMPT = (
+    "You have gathered enough data. Now provide your final answer as a JSON object "
+    "exactly matching the required schema. Do not call any more tools."
+)
+
+
 def _run_agent_loop(chat, user_prompt: str, token: str | None, max_tool_calls: int) -> dict:
     """Core synchronous agent loop. Returns the final parsed JSON dict."""
     response = chat.send_message(user_prompt)
@@ -617,7 +638,13 @@ def _run_agent_loop(chat, user_prompt: str, token: str | None, max_tool_calls: i
 
         response = chat.send_message(fn_responses)
 
-    return _parse_json(response.text)
+    # If the loop exhausted max_tool_calls or the model returned no text,
+    # send one finalize prompt to force a JSON text response.
+    if not _response_text(response):
+        logger.warning("Agent loop ended with no text response — sending finalize prompt")
+        response = chat.send_message(_FINALIZE_PROMPT)
+
+    return _parse_json(_response_text(response))
 
 
 def agent_chat(
@@ -705,9 +732,16 @@ async def agent_chat_stream(
 
         response = await loop.run_in_executor(None, chat.send_message, fn_responses)
 
+    # If the loop exhausted max_tool_calls or the model returned no text,
+    # send one finalize prompt to force a JSON text response.
+    if not _response_text(response):
+        logger.warning("Agent stream loop ended with no text response — sending finalize prompt")
+        yield {"type": "status", "message": "Finalizing response…"}
+        response = await loop.run_in_executor(None, chat.send_message, _FINALIZE_PROMPT)
+
     yield {"type": "status", "message": "Formatting response…"}
     try:
-        result = _parse_json(response.text)
+        result = _parse_json(_response_text(response))
         yield {"type": "result", "data": result}
     except Exception as exc:
         yield {"type": "error", "message": f"Failed to parse AI response: {exc}"}
