@@ -1,0 +1,18 @@
+[
+  {
+    "term": "Krishna",
+    "definition": "Krishna Ghjhkjhk, Resource VP of Enterprise Data (ED) Team",
+    "entity_type": "person",
+    "bq_table": "project.dataset.resources",
+    "bq_column": "resource_name",
+    "bq_value": "Krishna Ghjhkjhk"
+  },
+  {
+    "term": "ED Team",
+    "definition": "Enterprise Data team across all vendors",
+    "entity_type": "team",
+    "bq_table": "project.dataset.resources",
+    "bq_column": "team_name",
+    "bq_value": "Enterprise Data"
+  }
+]
