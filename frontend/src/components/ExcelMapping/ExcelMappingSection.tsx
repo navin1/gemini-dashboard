@@ -187,10 +187,6 @@ export default function ExcelMappingSection({ onRegisterRefresh }: Props) {
           </tbody>
         </table>
       </div>
-
-      <p className="text-[10px] text-gray-400 flex-shrink-0 pt-1.5">
-        Click any column header to sort · Mapped = Column 1 is exactly X or Y (case-insensitive) · File names in red indicate read errors
-      </p>
     </div>
   )
 }
