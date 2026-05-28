@@ -532,7 +532,7 @@ export default function App() {
           </div>
 
           {/* ── Content — all tabs always mounted; inactive hidden via CSS ── */}
-          <main className="flex-1 min-h-0 overflow-auto pb-14">
+          <main className="flex-1 min-h-0 overflow-auto pb-30">
             {tabOrder.map((id) => {
               const fixed   = FIXED_TABS.find((t) => t.id === id)
               const custom  = customTabs.find((t) => t.id === id)

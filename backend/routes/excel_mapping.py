@@ -215,6 +215,7 @@ def _build_preview_html(filename: str, header: list[str], rows: list[list]) -> s
         bg = "#ffffff" if i % 2 == 0 else "#eff6ff"
         body_rows.append(f'<tr style="background:{bg}">{"".join(cells)}</tr>')
 
+    col_count = len(header)
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -224,22 +225,47 @@ def _build_preview_html(filename: str, header: list[str], rows: list[list]) -> s
 <style>
   *{{box-sizing:border-box;margin:0;padding:0}}
   body{{font-family:'Courier New',monospace;font-size:12px;padding:16px;background:#f8fafc;color:#334155}}
-  h1{{font-size:14px;font-weight:700;margin-bottom:12px;color:#1e293b}}
+  .toolbar{{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}}
+  h1{{font-size:14px;font-weight:700;color:#1e293b}}
+  .ctrl{{display:flex;align-items:center;gap:6px;font-size:11px;color:#475569}}
+  .ctrl input[type=range]{{width:120px;accent-color:#4472C4}}
   .wrap{{overflow-x:auto}}
-  table{{border-collapse:collapse;min-width:100%;background:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.12)}}
-  th{{background:#4472C4;color:#fff;font-weight:700;padding:8px 14px;text-align:left;font-size:11px;white-space:nowrap;position:sticky;top:0}}
-  td{{padding:6px 14px;border-bottom:1px solid #e2e8f0;white-space:nowrap}}
+  table{{border-collapse:collapse;table-layout:fixed;width:100%;background:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.12)}}
+  th{{background:#4472C4;color:#fff;font-weight:700;padding:8px 14px;text-align:left;font-size:11px;white-space:nowrap;position:sticky;top:0;overflow:hidden;text-overflow:ellipsis}}
+  td{{padding:6px 14px;border-bottom:1px solid #e2e8f0;color:#000;word-wrap:break-word;overflow-wrap:break-word;overflow:hidden}}
   tr:last-child td{{border-bottom:none}}
 </style>
 </head>
 <body>
-<h1>{filename}.xlsx</h1>
+<div class="toolbar">
+  <h1>{filename}.xlsx</h1>
+  <div class="ctrl">
+    <span>Col width:</span>
+    <input type="range" id="colw" min="60" max="400" value="160" step="10"
+           oninput="setColWidth(this.value)">
+    <span id="colw-label">160px</span>
+  </div>
+  <button onclick="setColWidth(60)"  style="font-size:11px;padding:2px 8px;cursor:pointer">Narrow</button>
+  <button onclick="setColWidth(160)" style="font-size:11px;padding:2px 8px;cursor:pointer">Default</button>
+  <button onclick="setColWidth(300)" style="font-size:11px;padding:2px 8px;cursor:pointer">Wide</button>
+</div>
 <div class="wrap">
-<table>
+<table id="tbl">
+  <colgroup id="cg">{"<col>" * col_count}</colgroup>
   <thead><tr>{th_cells}</tr></thead>
   <tbody>{"".join(body_rows)}</tbody>
 </table>
 </div>
+<script>
+function setColWidth(px) {{
+  px = Math.max(60, Math.min(400, parseInt(px)));
+  document.getElementById('colw').value = px;
+  document.getElementById('colw-label').textContent = px + 'px';
+  var cols = document.getElementById('cg').getElementsByTagName('col');
+  for (var i = 0; i < cols.length; i++) cols[i].style.width = px + 'px';
+}}
+setColWidth(160);
+</script>
 </body>
 </html>"""
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Loader2 } from 'lucide-react'
 import { fetchSchemaAudit } from '../../api/schemaAudit'
 import type { SchemaAuditSummary } from '../../api/schemaAudit'
@@ -7,6 +7,9 @@ interface Props {
   env: string
   onRegisterRefresh: (fn: () => void) => void
 }
+
+type SortKey = 'table_name' | 'col_count_diff' | 'col_name_mismatches' | 'type_mismatches' | 'pos_mismatches'
+type SortDir = 'asc' | 'desc'
 
 function fmtDiff(n: number): string {
   if (n === 0) return '0'
@@ -18,11 +21,18 @@ function MismatchCell({ count }: { count: number }) {
   return <span className="font-semibold text-red-600">{count}</span>
 }
 
+function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey | null; sortDir: SortDir }) {
+  if (sortKey !== col) return <span className="text-gray-300 ml-1 text-[10px]">↕</span>
+  return <span className="text-gray-600 ml-1 text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>
+}
+
 export default function SchemaAuditSection({ env, onRegisterRefresh }: Props) {
-  const [tables,    setTables]    = useState<SchemaAuditSummary[]>([])
-  const [fetching,  setFetching]  = useState(false)
-  const [error,     setError]     = useState<string | null>(null)
+  const [tables,      setTables]      = useState<SchemaAuditSummary[]>([])
+  const [fetching,    setFetching]    = useState(false)
+  const [error,       setError]       = useState<string | null>(null)
   const [unconfigured, setUnconfigured] = useState(false)
+  const [sortKey,     setSortKey]     = useState<SortKey | null>(null)
+  const [sortDir,     setSortDir]     = useState<SortDir>('asc')
 
   const load = useCallback(async () => {
     if (!env) return
@@ -45,13 +55,32 @@ export default function SchemaAuditSection({ env, onRegisterRefresh }: Props) {
   }, [env])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => { onRegisterRefresh(load) }, [load, onRegisterRefresh])
 
-  useEffect(() => {
-    onRegisterRefresh(load)
-  }, [load, onRegisterRefresh])
+  function handleSort(col: SortKey) {
+    if (sortKey === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(col); setSortDir('asc') }
+  }
 
-  const thClass = 'px-3 py-2 text-left text-xs font-semibold text-gray-600 whitespace-nowrap select-none'
-  const numThClass = `${thClass} text-right`
+  const sorted = useMemo(() => {
+    if (!sortKey) return tables
+    return [...tables].sort((a, b) => {
+      const av = a[sortKey], bv = b[sortKey]
+      if (typeof av === 'number' && typeof bv === 'number')
+        return sortDir === 'asc' ? av - bv : bv - av
+      return sortDir === 'asc'
+        ? String(av).localeCompare(String(bv))
+        : String(bv).localeCompare(String(av))
+    })
+  }, [tables, sortKey, sortDir])
+
+  // Computed summary
+  const missing    = tables.filter(t => t.src_missing || t.tgt_missing).length
+  const mismatched = tables.filter(t => t.has_mismatch && !t.src_missing && !t.tgt_missing).length
+  const clean      = tables.filter(t => !t.has_mismatch).length
+
+  const thBase = 'px-3 py-2 text-left text-xs font-semibold text-gray-600 whitespace-nowrap select-none cursor-pointer hover:bg-gray-100 transition-colors'
+  const numTh  = `${thBase} text-right`
 
   if (fetching && tables.length === 0) {
     return (
@@ -88,6 +117,16 @@ export default function SchemaAuditSection({ env, onRegisterRefresh }: Props) {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
+      {/* AI Insight summary */}
+      <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-100 flex-shrink-0">
+        <p className="text-[11px] text-slate-500">
+          {tables.length} tables audited ·{' '}
+          {missing > 0 && <><span className="text-red-600 font-medium">{missing} missing dataset</span> · </>}
+          <span className="text-amber-600 font-medium">{mismatched} with mismatches</span> ·{' '}
+          <span className="text-emerald-600 font-medium">{clean} clean</span>
+        </p>
+      </div>
+
       {fetching && (
         <div className="flex items-center gap-1.5 px-3 py-1 text-xs text-gray-400 flex-shrink-0">
           <Loader2 size={11} className="animate-spin" /> Refreshing…
@@ -98,18 +137,28 @@ export default function SchemaAuditSection({ env, onRegisterRefresh }: Props) {
         <table className="w-full text-xs">
           <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
             <tr>
-              <th className={thClass}>Table Name</th>
-              <th className={numThClass}>Column Count</th>
-              <th className={numThClass}>Column Name</th>
-              <th className={numThClass}>Data Type</th>
-              <th className={numThClass}>Position</th>
+              <th className={thBase}  onClick={() => handleSort('table_name')}>
+                Table Name <SortIcon col="table_name" sortKey={sortKey} sortDir={sortDir} />
+              </th>
+              <th className={numTh}   onClick={() => handleSort('col_count_diff')}>
+                Column Count <SortIcon col="col_count_diff" sortKey={sortKey} sortDir={sortDir} />
+              </th>
+              <th className={numTh}   onClick={() => handleSort('col_name_mismatches')}>
+                Column Name <SortIcon col="col_name_mismatches" sortKey={sortKey} sortDir={sortDir} />
+              </th>
+              <th className={numTh}   onClick={() => handleSort('type_mismatches')}>
+                Data Type <SortIcon col="type_mismatches" sortKey={sortKey} sortDir={sortDir} />
+              </th>
+              <th className={numTh}   onClick={() => handleSort('pos_mismatches')}>
+                Position <SortIcon col="pos_mismatches" sortKey={sortKey} sortDir={sortDir} />
+              </th>
             </tr>
           </thead>
           <tbody>
-            {tables.map((row, i) => {
-              const isRed = row.src_missing || row.tgt_missing
+            {sorted.map((row, i) => {
+              const isRed    = row.src_missing || row.tgt_missing
               const baseText = isRed ? 'text-red-600 font-semibold' : 'text-gray-700'
-              const rowBg = i % 2 === 0 ? 'bg-white' : 'bg-blue-50'
+              const rowBg    = i % 2 === 0 ? 'bg-white' : 'bg-blue-50'
 
               const diffLabel = row.src_missing
                 ? 'SRC missing'
@@ -138,7 +187,7 @@ export default function SchemaAuditSection({ env, onRegisterRefresh }: Props) {
       </div>
 
       <p className="text-[10px] text-gray-400 flex-shrink-0 pt-1.5">
-        Sorted: mismatched tables first · Column Count = SRC − TGT · mismatch counts exclude Source/Target-only columns from type/position totals
+        Default sort: mismatched tables first · Click any column header to sort · Column Count = SRC − TGT · Mismatch counts exclude source/target-only columns
       </p>
     </div>
   )
