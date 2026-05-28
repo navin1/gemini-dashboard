@@ -5,6 +5,12 @@ const MONEY_COL = /spend|dollar|amount|budget|cost|ytd|capital|expense|salary|fe
 const COUNT_COL = /count|ftp|fte|hc|headcount|qty|quantity|rank|row_num|num_/i
 const PCT_COL   = /pct|percent|_pct$/i
 
+function fmtMoney(n: number): string {
+  if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
+  if (Math.abs(n) >= 1_000) return `$${(n / 1_000).toFixed(1)}K`
+  return `$${Math.round(n)}`
+}
+
 function fmtCell(val: unknown, key: string): string {
   if (val == null) return '—'
   if (typeof val !== 'number') return String(val)
@@ -15,11 +21,12 @@ function fmtCell(val: unknown, key: string): string {
     if (Math.abs(val) >= 1_000) return `$${(val / 1_000).toFixed(2)}K`
     return `$${val.toFixed(2)}`
   }
-  // Plain number: integers without decimals, decimals with up to 2 places
   return Number.isInteger(val)
     ? val.toLocaleString()
     : val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
+
+const TH = 'px-3 py-2 text-xs font-semibold text-gray-600 whitespace-nowrap select-none cursor-pointer hover:bg-gray-100 transition-colors'
 
 interface Props {
   data: Record<string, unknown>[]
@@ -34,9 +41,9 @@ export function DataTable({ data, maxRows = 100 }: Props) {
 
   if (!data.length) return <p className="text-sm text-gray-400 text-center py-8">No data</p>
 
-  const headers = Object.keys(data[0])
+  const headers    = Object.keys(data[0])
   const numericCols = new Set(headers.filter((h) => typeof data.find((r) => r[h] != null)?.[h] === 'number'))
-  const limited = data.slice(0, maxRows)
+  const limited    = data.slice(0, maxRows)
 
   const sorted = sortKey
     ? [...limited].sort((a, b) => {
@@ -48,24 +55,51 @@ export function DataTable({ data, maxRows = 100 }: Props) {
     : limited
 
   const totalPages = Math.ceil(sorted.length / pageSize)
-  const visible = sorted.slice(page * pageSize, page * pageSize + pageSize)
+  const visible    = sorted.slice(page * pageSize, page * pageSize + pageSize)
 
   function toggleSort(key: string) {
     if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
     else { setSortKey(key); setSortDir('desc') }
   }
 
+  // Compute aggregates for the insight bar
+  const moneyAgg = headers
+    .filter(h => MONEY_COL.test(h) && !COUNT_COL.test(h) && numericCols.has(h))
+    .slice(0, 2)
+    .map(h => ({ label: h.replace(/_/g, ' '), sum: data.reduce((s, r) => s + (((r[h] as number) || 0)), 0) }))
+    .filter(({ sum }) => sum !== 0)
+
+  const countAgg = headers
+    .filter(h => COUNT_COL.test(h) && numericCols.has(h))
+    .slice(0, 2)
+    .map(h => ({ label: h.replace(/_/g, ' '), sum: Math.round(data.reduce((s, r) => s + (((r[h] as number) || 0)), 0)) }))
+    .filter(({ sum }) => sum !== 0)
+
   return (
-    <div className="flex flex-col gap-2">
-      <div className="overflow-auto rounded border border-gray-200">
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* AI Insight summary */}
+      <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-100 flex-shrink-0">
+        <p className="text-[11px] text-slate-500">
+          {data.length.toLocaleString()} row{data.length !== 1 ? 's' : ''}
+          {moneyAgg.map(({ label, sum }) => (
+            <> · <span key={label} className="text-emerald-600 font-medium">{label}: {fmtMoney(sum)}</span></>
+          ))}
+          {countAgg.map(({ label, sum }) => (
+            <> · <span key={label} className="text-blue-600 font-medium">{label}: {sum.toLocaleString()}</span></>
+          ))}
+        </p>
+      </div>
+
+      {/* Table */}
+      <div className="overflow-auto flex-1 rounded border border-gray-200">
         <table className="w-full text-xs">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
+          <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
+            <tr>
               {headers.map((h) => (
                 <th
                   key={h}
                   onClick={() => toggleSort(h)}
-                  className={`px-3 py-2 font-semibold text-gray-600 whitespace-nowrap cursor-pointer hover:bg-gray-100 select-none ${numericCols.has(h) ? 'text-right' : 'text-left'}`}
+                  className={`${TH} ${numericCols.has(h) ? 'text-right' : 'text-left'}`}
                 >
                   <span className={`flex items-center gap-1 ${numericCols.has(h) ? 'justify-end' : ''}`}>
                     {h.replace(/_/g, ' ')}
@@ -90,8 +124,10 @@ export function DataTable({ data, maxRows = 100 }: Props) {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between text-xs text-gray-500">
+        <div className="flex items-center justify-between text-xs text-gray-500 flex-shrink-0 pt-1">
           <span>
             {page * pageSize + 1}–{Math.min((page + 1) * pageSize, sorted.length)} of {sorted.length} rows
           </span>

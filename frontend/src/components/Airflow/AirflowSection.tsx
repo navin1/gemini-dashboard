@@ -138,15 +138,34 @@ export default function AirflowSection({ live, onLiveStatusChange, onRegisterRef
     return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
   })
 
-  const thClass = 'px-3 py-2 text-left text-xs font-semibold text-gray-600 cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap'
+  const thClass = 'px-3 py-2 text-left text-xs font-semibold text-gray-600 cursor-pointer select-none hover:bg-gray-100 transition-colors whitespace-nowrap'
+
+  // Insight counts
+  const running = dags.filter(d => d.state === 'running').length
+  const success = dags.filter(d => d.state === 'success').length
+  const failed  = dags.filter(d => d.state === 'failed' || d.state === 'upstream_failed').length
+  const other   = dags.length - running - success - failed
 
   return (
-    <div className="flex flex-col gap-1 h-full">
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* AI Insight summary */}
+      {dags.length > 0 && (
+        <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-100 flex-shrink-0">
+          <p className="text-[11px] text-slate-500">
+            {dags.length} DAG{dags.length !== 1 ? 's' : ''}
+            {running > 0 && <> · <span className="text-blue-600 font-medium">{running} running</span></>}
+            {success > 0 && <> · <span className="text-emerald-600 font-medium">{success} success</span></>}
+            {failed  > 0 && <> · <span className="text-red-600 font-medium">{failed} failed</span></>}
+            {other   > 0 && <> · <span className="text-amber-600 font-medium">{other} other</span></>}
+          </p>
+        </div>
+      )}
+
       {/* Inline status — only visible when loading or errored */}
       {(fetching || fetchError) && (
-        <div className="flex items-center gap-2 mb-1">
+        <div className="flex items-center gap-2 px-3 py-1 text-xs text-gray-400 flex-shrink-0">
           {fetching && <Loader2 size={13} className="animate-spin text-gray-400" />}
-          {fetchError && <span className="text-xs text-red-500">{fetchError}</span>}
+          {fetchError && <span className="text-red-500">{fetchError}</span>}
         </div>
       )}
 
@@ -160,7 +179,7 @@ export default function AirflowSection({ live, onLiveStatusChange, onRegisterRef
         )}
         {airflowEnv && (dags.length > 0 || fetching) && (
           <table className="w-full text-xs">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
               <tr>
                 <th className={thClass} onClick={() => toggleSort('dag_id')}>
                   <span className="flex items-center gap-1">DAG Name <SortIcon col="dag_id" sortKey={sortKey} sortDir={sortDir} /></span>

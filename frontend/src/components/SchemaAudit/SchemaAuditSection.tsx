@@ -185,10 +185,6 @@ export default function SchemaAuditSection({ env, onRegisterRefresh }: Props) {
           </tbody>
         </table>
       </div>
-
-      <p className="text-[10px] text-gray-400 flex-shrink-0 pt-1.5">
-        Default sort: mismatched tables first · Click any column header to sort · Column Count = SRC − TGT · Mismatch counts exclude source/target-only columns
-      </p>
     </div>
   )
 }

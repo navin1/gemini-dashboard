@@ -62,6 +62,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
   const isAirflow      = widget.chart_type === 'airflow_dags'
   const isSchemaAudit  = widget.chart_type === 'schema_audit'
   const isExcelMapping = widget.chart_type === 'excel_mapping'
+  const isTable        = widget.chart_type === 'table'
   const { headerBg: ctxHeaderBg, headerBorder: ctxHeaderBorder, airflowEnv: ctxAirflowEnv, schemaAuditEnv: ctxSchemaAuditEnv, tabPrefix } = useTabTheme()
   // Prefer widget-locked values (set at copy/move time) over live context
   const headerBg     = widget.lockedHeaderBg    ?? ctxHeaderBg
@@ -466,7 +467,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             </div>
           ) : (
             <>
-              {widget.ai_description && !isAirflow && !isSchemaAudit && !isExcelMapping && (
+              {widget.ai_description && !isAirflow && !isSchemaAudit && !isExcelMapping && !isTable && (
                 <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex-shrink-0">
                   <p className="text-[11px] text-slate-500 leading-relaxed">{widget.ai_description}</p>
                 </div>
@@ -499,7 +500,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
           )}
 
           {!isAirflow && !isSchemaAudit && !isExcelMapping && !showSql && (
-            <div className="flex-1 overflow-auto p-3 min-h-0">
+            <div className={`flex-1 min-h-0 p-3 ${isTable || showData ? 'overflow-hidden' : 'overflow-auto'}`}>
               {showData ? (
                 <DataTable data={widget.data} />
               ) : (

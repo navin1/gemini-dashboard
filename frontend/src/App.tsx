@@ -12,7 +12,6 @@ import { GlossaryTab } from './tabs/GlossaryTab'
 import { ChatPanel } from './components/Chat/ChatPanel'
 import { AuthProvider } from './context/AuthContext'
 import { WidgetTransferProvider } from './context/WidgetTransferContext'
-import { fetchFTEScorecard, fetchVendorScorecard, fetchHierarchyScorecard } from './api/scorecard'
 import DagDetailTab from './components/Airflow/DagDetailTab'
 import SqlTab from './components/Airflow/SqlTab'
 import type { ChatWidgetDef } from './api/chat'
@@ -20,11 +19,6 @@ import type { Widget, AirflowTab } from './types'
 import clsx from 'clsx'
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1 } } })
-
-// Kick off all three scorecard fetches immediately so tabs load instantly
-qc.prefetchQuery({ queryKey: ['scorecard', 'uat'], queryFn: fetchFTEScorecard })
-qc.prefetchQuery({ queryKey: ['scorecard', 'prd'], queryFn: fetchVendorScorecard })
-qc.prefetchQuery({ queryKey: ['scorecard', 'dev'], queryFn: fetchHierarchyScorecard })
 
 // ── Fixed tabs (always present, not closeable) ────────────────────────────────
 const FIXED_TABS = [

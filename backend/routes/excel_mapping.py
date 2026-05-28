@@ -146,7 +146,11 @@ def _read_xlsx(src_type: str, full_path: str) -> dict:
 
         raw_header = all_rows[3]
         header = [str(h) if h is not None else f"Col{i}" for i, h in enumerate(raw_header, 1)]
-        data_rows = all_rows[4:]
+        # exclude rows where every cell is None or whitespace-only
+        data_rows = [
+            r for r in all_rows[4:]
+            if any(c is not None and str(c).strip() != '' for c in r)
+        ]
 
         total = len(data_rows)
         mapped = sum(
