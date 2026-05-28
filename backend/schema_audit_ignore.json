@@ -1,0 +1,19 @@
+{
+  "dev": {
+    "ignore_tables": ["datastream_detail","datastream_header"],
+    "ignore_src_columns": {
+       "iv01_stg": ["datastream_metadata"]
+    },
+    "ignore_tgt_columns": {}
+  },
+  "uat": {
+    "ignore_tables": ["datastream_detail","datastream_header"],
+    "ignore_src_columns": {},
+    "ignore_tgt_columns": {}
+  },
+  "prd": {
+    "ignore_tables": ["datastream_detail","datastream_header"],
+    "ignore_src_columns": {},
+    "ignore_tgt_columns": {}
+  }
+}

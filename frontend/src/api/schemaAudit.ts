@@ -26,11 +26,11 @@ export async function downloadSchemaAudit(env: string): Promise<void> {
   const blob = new Blob([response.data], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })
+  const disposition: string = response.headers['content-disposition'] ?? ''
+  const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+  const filename = match ? match[1].replace(/['"]/g, '') : `schema_mismatch_${env}.xlsx`
   const url = URL.createObjectURL(blob)
-  const a   = Object.assign(document.createElement('a'), {
-    href:     url,
-    download: `schema_mismatch_${env}.xlsx`,
-  })
+  const a   = Object.assign(document.createElement('a'), { href: url, download: filename })
   a.click()
   URL.revokeObjectURL(url)
 }

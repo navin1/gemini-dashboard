@@ -1,7 +1,9 @@
 import io
+import json
 import logging
 import os
 import re
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -38,6 +40,27 @@ def _get_src_tbl() -> str:
     return os.getenv("SCHEMA_AUDIT_SRC_TBL", "").strip()
 
 
+def _get_mysql_info_tbl() -> str:
+    return os.getenv("SCHEMA_AUDIT_MYSQL_INFO", "").strip()
+
+
+_IGNORE_CONFIG_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "schema_audit_ignore.json")
+)
+
+
+def _load_ignore_config(env: str) -> dict:
+    """Returns ignore config for env from schema_audit_ignore.json. Empty dict on any error or missing key."""
+    try:
+        with open(_IGNORE_CONFIG_PATH) as f:
+            return json.load(f).get(env.lower(), {})
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        logger.warning(f"Could not load schema_audit_ignore.json: {e}")
+        return {}
+
+
 # ── BigQuery helpers ───────────────────────────────────────────────────────────
 
 def _fetch_table_list(token) -> list[str]:
@@ -56,6 +79,43 @@ def _fetch_table_list(token) -> list[str]:
 def _sanitize_table_names(names: list[str]) -> list[str]:
     """Allow only safe characters in table names to prevent SQL injection."""
     return [n for n in names if re.match(r"^[A-Za-z0-9_\-]+$", n)]
+
+
+def _fetch_mysql_src_columns(table_names: list[str], token) -> dict[str, list[dict]] | None:
+    """
+    For DEV: query SCHEMA_AUDIT_MYSQL_INFO directly (already has column metadata).
+    Returns {table_name: [columns]} or None if not configured.
+    """
+    mysql_info_tbl = _get_mysql_info_tbl()
+    if not mysql_info_tbl or not table_names:
+        return None
+
+    safe_names = _sanitize_table_names(table_names)
+    if not safe_names:
+        return {}
+
+    quoted = ", ".join(f"'{n}'" for n in safe_names)
+    sql = f"""
+        SELECT table_name, column_name, data_type, CAST(ordinal_position AS INT64) AS ordinal_position
+        FROM `{mysql_info_tbl}`
+        WHERE table_name IN ({quoted})
+        ORDER BY table_name, ordinal_position
+    """
+    try:
+        rows = bigquery_client.run_query(sql, token)
+    except Exception as e:
+        logger.error(f"MYSQL_INFO query failed for {mysql_info_tbl}: {e}")
+        return None
+
+    result: dict[str, list[dict]] = {}
+    for row in rows:
+        tbl = row["table_name"]
+        result.setdefault(tbl, []).append({
+            "column_name":      row["column_name"],
+            "data_type":        row["data_type"],
+            "ordinal_position": int(row["ordinal_position"]),
+        })
+    return result
 
 
 def _fetch_all_columns(dataset: str, table_names: list[str], token) -> dict[str, list[dict]] | None:
@@ -204,10 +264,19 @@ def _run_comparison(env: str, token) -> tuple[list[dict], dict[str, list[dict]]]
       summaries      — sorted list of summary dicts (mismatched first, then alphabetical)
       detail_by_tbl  — {table_name: [detail_rows]}
     """
-    src_ds, tgt_ds = _get_datasets(env)
-    table_names    = _fetch_table_list(token)
+    ignore          = _load_ignore_config(env)
+    ignore_tables   = set(ignore.get("ignore_tables", []))
+    ignore_src_cols = ignore.get("ignore_src_columns", {})
+    ignore_tgt_cols = ignore.get("ignore_tgt_columns", {})
 
-    src_all = _fetch_all_columns(src_ds, table_names, token)
+    _src_ds, tgt_ds = _get_datasets(env)
+    table_names     = [t for t in _fetch_table_list(token) if t not in ignore_tables]
+
+    if env.lower() == "dev":
+        # PARKED: src_all = _fetch_all_columns(src_ds, table_names, token)
+        src_all = _fetch_mysql_src_columns(table_names, token)
+    else:
+        src_all = _fetch_all_columns(_src_ds, table_names, token)
     tgt_all = _fetch_all_columns(tgt_ds, table_names, token)
 
     summaries: list[dict] = []
@@ -216,6 +285,15 @@ def _run_comparison(env: str, token) -> tuple[list[dict], dict[str, list[dict]]]
     for tbl in table_names:
         src_cols = src_all.get(tbl) if src_all is not None else None
         tgt_cols = tgt_all.get(tbl) if tgt_all is not None else None
+
+        if src_cols is not None and tbl in ignore_src_cols:
+            skip = {c.lower() for c in ignore_src_cols[tbl]}
+            src_cols = [c for c in src_cols if c["column_name"].lower() not in skip]
+
+        if tgt_cols is not None and tbl in ignore_tgt_cols:
+            skip = {c.lower() for c in ignore_tgt_cols[tbl]}
+            tgt_cols = [c for c in tgt_cols if c["column_name"].lower() not in skip]
+
         summary, detail = _compare_table(tbl, src_cols, tgt_cols)
         summaries.append(summary)
         detail_by_tbl[tbl] = detail
@@ -337,7 +415,11 @@ async def get_schema_audit(
     token: Optional[str] = Depends(get_request_token),
 ):
     """Widget summary endpoint — one row per table."""
-    configured = bool(_get_src_tbl() and all(_get_datasets(env)))
+    _src_ds, tgt_ds = _get_datasets(env)
+    if env.lower() == "dev":
+        configured = bool(_get_src_tbl() and _get_mysql_info_tbl() and tgt_ds)
+    else:
+        configured = bool(_get_src_tbl() and _src_ds and tgt_ds)
     if not configured:
         return {"configured": False, "tables": []}
 
@@ -360,9 +442,13 @@ async def download_schema_audit(
     """Excel download endpoint."""
     if not _get_src_tbl():
         raise HTTPException(status_code=503, detail="SCHEMA_AUDIT_SRC_TBL is not configured.")
-    src_ds, tgt_ds = _get_datasets(env)
-    if not src_ds or not tgt_ds:
-        raise HTTPException(status_code=503, detail=f"SCHEMA_AUDIT_{env.upper()}_SRC / _TGT not configured.")
+    _src_ds, tgt_ds = _get_datasets(env)
+    if env.lower() == "dev":
+        if not _get_mysql_info_tbl() or not tgt_ds:
+            raise HTTPException(status_code=503, detail="SCHEMA_AUDIT_MYSQL_INFO / SCHEMA_AUDIT_DEV_TGT not configured.")
+    else:
+        if not _src_ds or not tgt_ds:
+            raise HTTPException(status_code=503, detail=f"SCHEMA_AUDIT_{env.upper()}_SRC / _TGT not configured.")
 
     try:
         summaries, detail_by_tbl = _run_comparison(env, token)
@@ -373,7 +459,8 @@ async def download_schema_audit(
         raise HTTPException(status_code=500, detail=str(e))
 
     excel_bytes = _build_excel(summaries, detail_by_tbl)
-    filename    = f"schema_mismatch_{env}.xlsx"
+    timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename    = f"schema_mismatch_{env}_{timestamp}.xlsx"
 
     return StreamingResponse(
         io.BytesIO(excel_bytes),
