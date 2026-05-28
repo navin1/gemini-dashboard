@@ -15,7 +15,7 @@ import { TabThemeContext } from '../context/TabThemeContext'
 
 const STORAGE_KEY = 'gd_ws_uat'
 const LEGACY_STORAGE_KEY = 'gd_ws_fte'
-const SEED_IDS = ['fte_spend_class', 'fte_capital_combo', 'fte_expense_combo', 'fte_table', 'fte_donut', 'fte_cap_exp_ftp', 'fte_airflow_dags']
+const SEED_IDS = ['fte_spend_class', 'fte_capital_combo', 'fte_expense_combo', 'fte_table', 'fte_donut', 'fte_cap_exp_ftp', 'fte_airflow_dags', 'fte_schema_audit']
 
 function loadState(): { widgets: Widget[]; customKpis: CustomKpi[] } {
   try {
@@ -100,6 +100,14 @@ function makeSeeds(data: ScorecardFTE): Widget[] {
       sql: '', data: [],
       layout: { i: 'fte_airflow_dags', x: 0, y: 30, w: 12, h: 9, minH: 6 },
     },
+    {
+      id: 'fte_schema_audit', title: 'Schema Mismatch',
+      chart_type: 'schema_audit', x_axis: undefined, y_axis: [],
+      stacked: false, dual_axis: false,
+      ai_description: '',
+      sql: '', data: [],
+      layout: { i: 'fte_schema_audit', x: 0, y: 39, w: 12, h: 12, minH: 8 },
+    },
   ]
 }
 
@@ -110,7 +118,7 @@ interface Props {
 }
 
 export function UATDashboardTab({ tabLabel, onRegisterAddWidget, onOpenDagTab }: Props) {
-  const tabTheme = { headerBg: 'bg-yellow-100', headerBorder: 'border-yellow-100', airflowEnv: 'UAT', tabPrefix: 'UAT', onOpenDagTab }
+  const tabTheme = { headerBg: 'bg-yellow-100', headerBorder: 'border-yellow-100', airflowEnv: 'UAT', schemaAuditEnv: 'uat', tabPrefix: 'UAT', onOpenDagTab }
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['scorecard', 'uat'],
     queryFn: fetchFTEScorecard,

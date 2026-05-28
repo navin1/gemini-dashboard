@@ -15,7 +15,7 @@ import { TabThemeContext } from '../context/TabThemeContext'
 
 const STORAGE_KEY = 'gd_ws_prd'
 const LEGACY_STORAGE_KEY = 'gd_ws_vendor'
-const SEED_IDS = ['vendor_tier_breakdown', 'vendor_offshore', 'vendor_billtype_bar', 'vendor_table', 'vendor_spend_by_tier', 'vendor_monthly', 'vendor_cap_exp_ftp', 'vendor_resource_count', 'vendor_airflow_dags']
+const SEED_IDS = ['vendor_tier_breakdown', 'vendor_offshore', 'vendor_billtype_bar', 'vendor_table', 'vendor_spend_by_tier', 'vendor_monthly', 'vendor_cap_exp_ftp', 'vendor_resource_count', 'vendor_airflow_dags', 'vendor_schema_audit']
 
 function loadState(): { widgets: Widget[]; customKpis: CustomKpi[] } {
   try {
@@ -114,6 +114,14 @@ function makeSeeds(data: ScorecardVendor): Widget[] {
       sql: '', data: [],
       layout: { i: 'vendor_airflow_dags', x: 0, y: 30, w: 12, h: 9, minH: 6 },
     },
+    {
+      id: 'vendor_schema_audit', title: 'Schema Mismatch',
+      chart_type: 'schema_audit', x_axis: undefined, y_axis: [],
+      stacked: false, dual_axis: false,
+      ai_description: '',
+      sql: '', data: [],
+      layout: { i: 'vendor_schema_audit', x: 0, y: 39, w: 12, h: 12, minH: 8 },
+    },
   ]
 }
 
@@ -124,7 +132,7 @@ interface Props {
 }
 
 export function PRDDashboardTab({ tabLabel, onRegisterAddWidget, onOpenDagTab }: Props) {
-  const tabTheme = { headerBg: 'bg-green-100', headerBorder: 'border-green-100', airflowEnv: 'PRD', tabPrefix: 'PRD', onOpenDagTab }
+  const tabTheme = { headerBg: 'bg-green-100', headerBorder: 'border-green-100', airflowEnv: 'PRD', schemaAuditEnv: 'prd', tabPrefix: 'PRD', onOpenDagTab }
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['scorecard', 'prd'],
     queryFn: fetchVendorScorecard,

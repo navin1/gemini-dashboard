@@ -15,7 +15,7 @@ import { TabThemeContext } from '../context/TabThemeContext'
 
 const STORAGE_KEY = 'gd_ws_dev'
 const LEGACY_STORAGE_KEY = 'gd_ws_hierarchy'
-const SEED_IDS = ['hier_tier_breakdown', 'hier_drill', 'hier_cat_monthly', 'hier_billtype_monthly', 'hier_airflow_dags']
+const SEED_IDS = ['hier_tier_breakdown', 'hier_drill', 'hier_cat_monthly', 'hier_billtype_monthly', 'hier_airflow_dags', 'hier_schema_audit']
 
 function loadState(): { widgets: Widget[]; customKpis: CustomKpi[] } {
   try {
@@ -82,6 +82,14 @@ function makeSeeds(data: ScorecardHierarchy): Widget[] {
       sql: '', data: [],
       layout: { i: 'hier_airflow_dags', x: 0, y: 24, w: 12, h: 9, minH: 6 },
     },
+    {
+      id: 'hier_schema_audit', title: 'Schema Mismatch',
+      chart_type: 'schema_audit', x_axis: undefined, y_axis: [],
+      stacked: false, dual_axis: false,
+      ai_description: '',
+      sql: '', data: [],
+      layout: { i: 'hier_schema_audit', x: 0, y: 33, w: 12, h: 12, minH: 8 },
+    },
   ]
 }
 
@@ -92,7 +100,7 @@ interface Props {
 }
 
 export function DEVDashboardTab({ tabLabel, onRegisterAddWidget, onOpenDagTab }: Props) {
-  const tabTheme = { headerBg: 'bg-blue-100', headerBorder: 'border-blue-100', airflowEnv: 'Dev', tabPrefix: 'DEV', onOpenDagTab }
+  const tabTheme = { headerBg: 'bg-blue-100', headerBorder: 'border-blue-100', airflowEnv: 'Dev', schemaAuditEnv: 'dev', tabPrefix: 'DEV', onOpenDagTab }
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['scorecard', 'dev'],
     queryFn: fetchHierarchyScorecard,

@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 from database import engine, Base
 import models  # noqa: F401 — registers SQLAlchemy models
 from seed_data import seed
-from routes import query, favorites, glossary, scorecard, pdf, chat, stream, airflow
+from routes import query, favorites, glossary, scorecard, pdf, chat, stream, airflow, schema_audit
 
 Base.metadata.create_all(bind=engine)
 seed()
@@ -73,6 +73,7 @@ app.include_router(pdf.router)
 app.include_router(chat.router)
 app.include_router(stream.router)
 app.include_router(airflow.router)
+app.include_router(schema_audit.router)
 
 
 @app.get("/api/health")

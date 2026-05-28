@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Star, ChevronDown, ChevronUp, Maximize2, Code2, Sparkles, Loader2, Pencil, CornerUpRight, CopyPlus, Wifi, WifiOff, RefreshCw, AlertCircle } from 'lucide-react'
+import { X, Star, ChevronDown, ChevronUp, Maximize2, Code2, Sparkles, Loader2, Pencil, CornerUpRight, CopyPlus, Wifi, WifiOff, RefreshCw, AlertCircle, Download } from 'lucide-react'
 import { ChartRenderer } from '../Charts/ChartRenderer'
 import { DataTable } from '../DataTable/DataTable'
 import { refineWidget } from '../../api/query'
+import { downloadSchemaAudit } from '../../api/schemaAudit'
 import { useWidgetTransfer } from '../../context/WidgetTransferContext'
 import { useTabTheme } from '../../context/TabThemeContext'
 import AirflowSection from '../Airflow/AirflowSection'
+import SchemaAuditSection from '../SchemaAudit/SchemaAuditSection'
 import { LiveBadge } from '../common/LiveBadge'
 import type { Widget as WidgetType } from '../../types'
 import type { LiveStatus } from '../../hooks/useLiveStream'
@@ -22,6 +24,7 @@ const TYPE_STYLE: Record<string, { border: string; badge: string }> = {
   combo:          { border: 'border-l-teal-400',    badge: 'bg-teal-50 text-teal-700' },
   horizontal_bar: { border: 'border-l-cyan-400',    badge: 'bg-cyan-50 text-cyan-700' },
   airflow_dags:   { border: 'border-l-sky-500',     badge: 'bg-sky-50 text-sky-700' },
+  schema_audit:   { border: 'border-l-purple-500',  badge: 'bg-purple-50 text-purple-700' },
 }
 const FALLBACK = { border: 'border-l-slate-300', badge: 'bg-slate-100 text-slate-600' }
 
@@ -54,8 +57,9 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
   const [copied, setCopied] = useState(false)
   const style = TYPE_STYLE[widget.chart_type] ?? FALLBACK
   const hasSql = !!widget.sql?.trim()
-  const isAirflow = widget.chart_type === 'airflow_dags'
-  const { headerBg: ctxHeaderBg, headerBorder: ctxHeaderBorder, airflowEnv: ctxAirflowEnv, tabPrefix } = useTabTheme()
+  const isAirflow      = widget.chart_type === 'airflow_dags'
+  const isSchemaAudit  = widget.chart_type === 'schema_audit'
+  const { headerBg: ctxHeaderBg, headerBorder: ctxHeaderBorder, airflowEnv: ctxAirflowEnv, schemaAuditEnv: ctxSchemaAuditEnv, tabPrefix } = useTabTheme()
   // Prefer widget-locked values (set at copy/move time) over live context
   const headerBg     = widget.lockedHeaderBg    ?? ctxHeaderBg
   const headerBorder = widget.lockedHeaderBorder ?? ctxHeaderBorder
@@ -81,6 +85,23 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
   const airflowRefreshRef = useRef<(() => void) | null>(null)
   const handleAirflowLiveStatus = useCallback((s: LiveStatus) => setAirflowLiveStatus(s), [])
   const handleRegisterRefresh = useCallback((fn: () => void) => { airflowRefreshRef.current = fn }, [])
+
+  // Schema audit widget controls
+  const [schemaAuditDownloading, setSchemaAuditDownloading] = useState(false)
+  const schemaAuditRefreshRef = useRef<(() => void) | null>(null)
+  const handleRegisterSchemaRefresh = useCallback((fn: () => void) => { schemaAuditRefreshRef.current = fn }, [])
+
+  async function handleSchemaAuditDownload() {
+    const env = ctxSchemaAuditEnv ?? tabPrefix.toLowerCase()
+    setSchemaAuditDownloading(true)
+    try {
+      await downloadSchemaAudit(env)
+    } catch (e) {
+      console.error('Schema audit download failed:', e)
+    } finally {
+      setSchemaAuditDownloading(false)
+    }
+  }
 
   // Inline title rename
   const [editingTitle, setEditingTitle] = useState(false)
@@ -288,7 +309,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             </>
           )}
 
-          {!isAirflow && (
+          {!isAirflow && !isSchemaAudit && (
             <button
               title={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
               onMouseDown={noDrag}
@@ -302,7 +323,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             </button>
           )}
 
-          {!isAirflow && (
+          {!isAirflow && !isSchemaAudit && (
             <button
               title={showData ? 'Show chart' : 'Show raw data'}
               onMouseDown={noDrag}
@@ -313,7 +334,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             </button>
           )}
 
-          {!isAirflow && (
+          {!isAirflow && !isSchemaAudit && (
             <button
               title={showSql ? 'Hide SQL' : 'View / refine SQL'}
               onMouseDown={noDrag}
@@ -324,7 +345,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             </button>
           )}
 
-          {hasSql && widget.chart_type !== 'kpi' && (
+          {hasSql && widget.chart_type !== 'kpi' && !isSchemaAudit && (
             <button
               title={widget.live ? 'Stop live updates' : 'Enable live updates for this widget'}
               onMouseDown={noDrag}
@@ -333,6 +354,30 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             >
               {widget.live ? <WifiOff size={13} /> : <Wifi size={13} />}
             </button>
+          )}
+
+          {isSchemaAudit && (
+            <>
+              <button
+                title="Download Excel"
+                onMouseDown={noDrag}
+                onClick={handleSchemaAuditDownload}
+                disabled={schemaAuditDownloading}
+                className="p-1.5 text-slate-400 hover:text-emerald-600 disabled:opacity-50 transition-colors rounded"
+              >
+                {schemaAuditDownloading
+                  ? <Loader2 size={13} className="animate-spin" />
+                  : <Download size={13} />}
+              </button>
+              <button
+                title="Refresh schema audit"
+                onMouseDown={noDrag}
+                onClick={() => schemaAuditRefreshRef.current?.()}
+                className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors rounded"
+              >
+                <RefreshCw size={13} />
+              </button>
+            </>
           )}
 
           {isAirflow && (
@@ -357,7 +402,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             </>
           )}
 
-          {hasSql && widget.chart_type !== 'kpi' && (
+          {hasSql && widget.chart_type !== 'kpi' && !isSchemaAudit && (
             <button
               title={widget.live ? 'Stop live updates' : 'Enable live updates for this widget'}
               onMouseDown={noDrag}
@@ -403,7 +448,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             </div>
           ) : (
             <>
-              {widget.ai_description && !isAirflow && (
+              {widget.ai_description && !isAirflow && !isSchemaAudit && (
                 <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex-shrink-0">
                   <p className="text-[11px] text-slate-500 leading-relaxed">{widget.ai_description}</p>
                 </div>
@@ -420,7 +465,16 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             </div>
           )}
 
-          {!isAirflow && !showSql && (
+          {isSchemaAudit && (
+            <div className="flex-1 overflow-hidden min-h-0 p-3">
+              <SchemaAuditSection
+                env={ctxSchemaAuditEnv ?? tabPrefix.toLowerCase()}
+                onRegisterRefresh={handleRegisterSchemaRefresh}
+              />
+            </div>
+          )}
+
+          {!isAirflow && !isSchemaAudit && !showSql && (
             <div className="flex-1 overflow-auto p-3 min-h-0">
               {showData ? (
                 <DataTable data={widget.data} />
@@ -441,7 +495,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
           )}
 
           {/* SQL panel */}
-          {!isAirflow && showSql && (
+          {!isAirflow && !isSchemaAudit && showSql && (
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden border-t border-violet-100">
               <div className="flex items-center justify-between px-3 py-1.5 bg-violet-50 border-b border-violet-100 flex-shrink-0">
                 <span className="text-[10px] font-semibold text-violet-700 uppercase tracking-wide">SQL Query</span>

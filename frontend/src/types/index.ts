@@ -35,6 +35,7 @@ export type ChartType =
   | 'kpi'
   | 'horizontal_bar'
   | 'airflow_dags'
+  | 'schema_audit'
 
 export interface GridLayout {
   i: string

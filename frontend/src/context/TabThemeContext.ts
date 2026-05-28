@@ -3,7 +3,8 @@ import { createContext, useContext } from 'react'
 export interface TabTheme {
   headerBg: string      // Tailwind bg class for widget header, e.g. 'bg-orange-50'
   headerBorder: string  // Tailwind border class for widget header bottom, e.g. 'border-orange-100'
-  airflowEnv?: string   // Airflow environment name for this tab, e.g. 'UAT'
+  airflowEnv?: string      // Airflow environment name for this tab, e.g. 'UAT'
+  schemaAuditEnv?: string  // Schema audit env key: 'dev' | 'uat' | 'prd'
   tabPrefix: string     // Prefix for Airflow in-app tab labels, e.g. 'UAT', 'PRD', 'DEV', 'My'
   onOpenDagTab: (dagId: string, env: string) => void
 }
