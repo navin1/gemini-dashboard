@@ -49,11 +49,29 @@ _IGNORE_CONFIG_PATH = os.path.abspath(
 )
 
 
+def _merge_ignore(base: dict, override: dict) -> dict:
+    """Merge two ignore configs: union tables, union per-table column lists."""
+    tables = list(set(base.get("ignore_tables", [])) | set(override.get("ignore_tables", [])))
+
+    def _merge_cols(a: dict, b: dict) -> dict:
+        keys = set(a) | set(b)
+        return {k: list(set(a.get(k, [])) | set(b.get(k, []))) for k in keys}
+
+    return {
+        "ignore_tables":      tables,
+        "ignore_src_columns": _merge_cols(base.get("ignore_src_columns", {}), override.get("ignore_src_columns", {})),
+        "ignore_tgt_columns": _merge_cols(base.get("ignore_tgt_columns", {}), override.get("ignore_tgt_columns", {})),
+    }
+
+
 def _load_ignore_config(env: str) -> dict:
-    """Returns ignore config for env from schema_audit_ignore.json. Empty dict on any error or missing key."""
+    """Returns merged all_env + env-specific ignore config. Empty dict on any error or missing key."""
     try:
         with open(_IGNORE_CONFIG_PATH) as f:
-            return json.load(f).get(env.lower(), {})
+            raw = json.load(f)
+        all_env = raw.get("all_env", {})
+        env_cfg = raw.get(env.lower(), {})
+        return _merge_ignore(all_env, env_cfg)
     except FileNotFoundError:
         return {}
     except Exception as e:
