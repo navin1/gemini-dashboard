@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
 import { fetchExcelMapping, refreshExcelMapping, getPreviewUrl } from '../../api/excelMapping'
 import type { ExcelMappingFile } from '../../api/excelMapping'
 
@@ -11,8 +11,8 @@ type SortKey = 'display_name' | 'total_rows' | 'mapped' | 'in_progress'
 type SortDir = 'asc' | 'desc'
 
 function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey | null; sortDir: SortDir }) {
-  if (sortKey !== col) return <span className="text-gray-300 ml-1 text-[10px]">↕</span>
-  return <span className="text-gray-600 ml-1 text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>
+  if (sortKey !== col) return <ChevronsUpDown size={12} className="text-gray-300" />
+  return sortDir === 'asc' ? <ChevronUp size={12} className="text-brand-500" /> : <ChevronDown size={12} className="text-brand-500" />
 }
 
 export default function ExcelMappingSection({ onRegisterRefresh }: Props) {
@@ -131,16 +131,16 @@ export default function ExcelMappingSection({ onRegisterRefresh }: Props) {
           <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
             <tr>
               <th className={thBase} onClick={() => handleSort('display_name')}>
-                File Name <SortIcon col="display_name" sortKey={sortKey} sortDir={sortDir} />
+                <span className="flex items-center gap-1">File Name <SortIcon col="display_name" sortKey={sortKey} sortDir={sortDir} /></span>
               </th>
               <th className={numTh}  onClick={() => handleSort('total_rows')}>
-                Total Rows <SortIcon col="total_rows" sortKey={sortKey} sortDir={sortDir} />
+                <span className="flex items-center gap-1 justify-end">Total Rows <SortIcon col="total_rows" sortKey={sortKey} sortDir={sortDir} /></span>
               </th>
               <th className={numTh}  onClick={() => handleSort('mapped')}>
-                Mapped <SortIcon col="mapped" sortKey={sortKey} sortDir={sortDir} />
+                <span className="flex items-center gap-1 justify-end">Mapped <SortIcon col="mapped" sortKey={sortKey} sortDir={sortDir} /></span>
               </th>
               <th className={numTh}  onClick={() => handleSort('in_progress')}>
-                In Progress <SortIcon col="in_progress" sortKey={sortKey} sortDir={sortDir} />
+                <span className="flex items-center gap-1 justify-end">In Progress <SortIcon col="in_progress" sortKey={sortKey} sortDir={sortDir} /></span>
               </th>
             </tr>
           </thead>

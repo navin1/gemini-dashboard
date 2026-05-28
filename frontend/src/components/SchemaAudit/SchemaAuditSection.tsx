@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
 import { fetchSchemaAudit } from '../../api/schemaAudit'
 import type { SchemaAuditSummary } from '../../api/schemaAudit'
 
@@ -22,8 +22,8 @@ function MismatchCell({ count }: { count: number }) {
 }
 
 function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey | null; sortDir: SortDir }) {
-  if (sortKey !== col) return <span className="text-gray-300 ml-1 text-[10px]">↕</span>
-  return <span className="text-gray-600 ml-1 text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>
+  if (sortKey !== col) return <ChevronsUpDown size={12} className="text-gray-300" />
+  return sortDir === 'asc' ? <ChevronUp size={12} className="text-brand-500" /> : <ChevronDown size={12} className="text-brand-500" />
 }
 
 export default function SchemaAuditSection({ env, onRegisterRefresh }: Props) {
@@ -138,19 +138,19 @@ export default function SchemaAuditSection({ env, onRegisterRefresh }: Props) {
           <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
             <tr>
               <th className={thBase}  onClick={() => handleSort('table_name')}>
-                Table Name <SortIcon col="table_name" sortKey={sortKey} sortDir={sortDir} />
+                <span className="flex items-center gap-1">Table Name <SortIcon col="table_name" sortKey={sortKey} sortDir={sortDir} /></span>
               </th>
               <th className={numTh}   onClick={() => handleSort('col_count_diff')}>
-                Column Count <SortIcon col="col_count_diff" sortKey={sortKey} sortDir={sortDir} />
+                <span className="flex items-center gap-1 justify-end">Column Count <SortIcon col="col_count_diff" sortKey={sortKey} sortDir={sortDir} /></span>
               </th>
               <th className={numTh}   onClick={() => handleSort('col_name_mismatches')}>
-                Column Name <SortIcon col="col_name_mismatches" sortKey={sortKey} sortDir={sortDir} />
+                <span className="flex items-center gap-1 justify-end">Column Name <SortIcon col="col_name_mismatches" sortKey={sortKey} sortDir={sortDir} /></span>
               </th>
               <th className={numTh}   onClick={() => handleSort('type_mismatches')}>
-                Data Type <SortIcon col="type_mismatches" sortKey={sortKey} sortDir={sortDir} />
+                <span className="flex items-center gap-1 justify-end">Data Type <SortIcon col="type_mismatches" sortKey={sortKey} sortDir={sortDir} /></span>
               </th>
               <th className={numTh}   onClick={() => handleSort('pos_mismatches')}>
-                Position <SortIcon col="pos_mismatches" sortKey={sortKey} sortDir={sortDir} />
+                <span className="flex items-center gap-1 justify-end">Position <SortIcon col="pos_mismatches" sortKey={sortKey} sortDir={sortDir} /></span>
               </th>
             </tr>
           </thead>
