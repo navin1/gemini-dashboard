@@ -460,13 +460,21 @@ BigQuery rules (apply to every SQL you write):
 - For period time-series: UNION ALL each period into (month_label, category, value) rows
 - Valid BigQuery Standard SQL only (no trailing semicolons)
 
+Excel Mapping data (use get_excel_mapping_data tool):
+- Call with action="summary" → returns all mapping files with total_rows, mapped, in_progress counts.
+- Call with action="file_data" + filename → returns full row-level data (up to 200 rows) with all columns.
+- "Mapped" = Column 1 is exactly X or Y (case-insensitive). "In Progress" = anything else including blank/null.
+- Use this to answer: completion rates, which files have the most gaps, which rows are unmapped, cross-file comparisons, trend analysis on mapping progress.
+- Always call action="summary" first to discover exact filenames before fetching file_data.
+
 Behaviour:
-- Always call run_bigquery_query to fetch real data before answering. Never hallucinate results.
-- You may call the tool multiple times in one turn — explore first, then refine, then summarise.
+- Always call the appropriate tool to fetch real data before answering. Never hallucinate results.
+- You may call tools multiple times in one turn — explore first, then refine, then summarise.
+- Mix run_bigquery_query and get_excel_mapping_data freely in the same turn if needed.
 - When the user asks to visualise data, include a widget in your final JSON response.
 - Always maintain context from conversation history.
-- If a query errors, try an alternative SQL approach (different column names, different filters) before giving up.
-- For filter values (Status, Resource_Type, etc.) use run_bigquery_query with SELECT DISTINCT to discover exact values before applying WHERE clauses.
+- If a BQ query errors, try an alternative SQL approach (different column names, different filters) before giving up.
+- For BQ filter values (Status, Resource_Type, etc.) use run_bigquery_query with SELECT DISTINCT to discover exact values before applying WHERE clauses.
 
 You MUST end every turn with a single raw JSON object (no markdown, no prose outside the JSON):
 {{
@@ -666,11 +674,114 @@ def _build_contextual_hints(message: str, token: str | None) -> str:
     return "\n\nContextual values (exact strings to use in WHERE clauses):\n" + "\n".join(hints)
 
 
+_EXCEL_TOOL = Tool(function_declarations=[
+    FunctionDeclaration(
+        name="get_excel_mapping_data",
+        description=(
+            "Retrieve Excel mapping file data loaded from LOCAL/GCS folders. "
+            "Use action='summary' to list all files with completion stats. "
+            "Use action='file_data' + filename to get full row-level data for a specific file."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["summary", "file_data"],
+                    "description": (
+                        "'summary' returns all files with their total_rows, mapped, in_progress counts. "
+                        "'file_data' returns all rows from a specific file (requires filename)."
+                    ),
+                },
+                "filename": {
+                    "type": "string",
+                    "description": (
+                        "The display_name of the file to fetch row data for. "
+                        "Required when action='file_data'. Call with action='summary' first to get exact names."
+                    ),
+                },
+            },
+            "required": ["action"],
+        },
+    )
+])
+
+
+def _execute_excel_call(fc) -> Part:
+    """Handle a get_excel_mapping_data tool call using the in-memory cache."""
+    from routes import excel_mapping as _em  # lazy import — avoids circular deps at module load
+
+    action   = fc.args.get("action", "summary")
+    filename = fc.args.get("filename", "")
+
+    entries = _em._get_cache()
+
+    if action == "summary":
+        data = [
+            {
+                "filename":    e["display_name"],
+                "total_rows":  e.get("total_rows"),
+                "mapped":      e.get("mapped"),
+                "in_progress": e.get("in_progress"),
+                "has_error":   bool(e.get("error")),
+            }
+            for e in entries
+        ]
+        return Part.from_function_response(
+            name=fc.name,
+            response={"status": "success", "file_count": len(data), "files": data},
+        )
+
+    # action == "file_data"
+    entry = next((e for e in entries if e["display_name"] == filename), None)
+    if entry is None:
+        return Part.from_function_response(
+            name=fc.name,
+            response={"status": "error", "error": f"File '{filename}' not found. Call with action='summary' to list available filenames."},
+        )
+    if entry.get("error"):
+        return Part.from_function_response(
+            name=fc.name,
+            response={"status": "error", "error": entry["error"]},
+        )
+
+    header   = entry.get("header") or []
+    raw_rows = entry.get("rows") or []
+    row_dicts = [
+        {(header[i] if i < len(header) else f"Col{i + 1}"): ("" if cell is None else cell)
+         for i, cell in enumerate(row)}
+        for row in raw_rows
+    ]
+    truncated = len(row_dicts) > 200
+    return Part.from_function_response(
+        name=fc.name,
+        response={
+            "status":    "success",
+            "filename":  filename,
+            "row_count": len(row_dicts),
+            "columns":   header,
+            "data":      row_dicts[:200],
+            **({"truncated": True, "note": "Showing first 200 rows."} if truncated else {}),
+        },
+    )
+
+
+def _dispatch_tool_call(fc, token: str | None) -> Part:
+    if fc.name == "run_bigquery_query":
+        return _execute_bq_call(fc, token)
+    if fc.name == "get_excel_mapping_data":
+        return _execute_excel_call(fc)
+    return Part.from_function_response(
+        name=fc.name,
+        response={"status": "error", "error": f"Unknown tool: {fc.name}"},
+    )
+
+
 def _build_agent_model():
     model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     return GenerativeModel(
         model_name,
-        tools=[_BQ_TOOL],
+        tools=[_BQ_TOOL, _EXCEL_TOOL],
         system_instruction=_build_agent_system(),
     )
 
@@ -720,7 +831,7 @@ def _run_agent_loop(chat, user_prompt: str, token: str | None, max_tool_calls: i
 
         # Run all tool calls in this round concurrently
         with ThreadPoolExecutor(max_workers=len(fc_parts)) as pool:
-            fn_responses = list(pool.map(lambda p: _execute_bq_call(p.function_call, token), fc_parts))
+            fn_responses = list(pool.map(lambda p: _dispatch_tool_call(p.function_call, token), fc_parts))
 
         response = chat.send_message(fn_responses)
 
@@ -813,7 +924,7 @@ async def agent_chat_stream(
 
         # Fire all tool calls in this round concurrently
         fn_responses = list(await asyncio.gather(
-            *[loop.run_in_executor(None, _execute_bq_call, p.function_call, token) for p in fc_parts]
+            *[loop.run_in_executor(None, _dispatch_tool_call, p.function_call, token) for p in fc_parts]
         ))
 
         response = await loop.run_in_executor(None, chat.send_message, fn_responses)

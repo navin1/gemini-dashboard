@@ -15,7 +15,7 @@ import { TabThemeContext } from '../context/TabThemeContext'
 
 const STORAGE_KEY = 'gd_ws_dev'
 const LEGACY_STORAGE_KEY = 'gd_ws_hierarchy'
-const SEED_IDS = ['hier_tier_breakdown', 'hier_drill', 'hier_cat_monthly', 'hier_billtype_monthly', 'hier_airflow_dags', 'hier_schema_audit']
+const SEED_IDS = ['hier_tier_breakdown', 'hier_drill', 'hier_cat_monthly', 'hier_billtype_monthly', 'hier_airflow_dags', 'hier_schema_audit', 'hier_excel_mapping']
 
 function loadState(): { widgets: Widget[]; customKpis: CustomKpi[] } {
   try {
@@ -89,6 +89,14 @@ function makeSeeds(data: ScorecardHierarchy): Widget[] {
       ai_description: '',
       sql: '', data: [],
       layout: { i: 'hier_schema_audit', x: 0, y: 33, w: 12, h: 12, minH: 8 },
+    },
+    {
+      id: 'hier_excel_mapping', title: 'Excel Mapping',
+      chart_type: 'excel_mapping', x_axis: undefined, y_axis: [],
+      stacked: false, dual_axis: false,
+      ai_description: '',
+      sql: '', data: [],
+      layout: { i: 'hier_excel_mapping', x: 0, y: 45, w: 12, h: 10, minH: 6 },
     },
   ]
 }

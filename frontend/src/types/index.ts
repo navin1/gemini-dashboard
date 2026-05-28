@@ -36,6 +36,7 @@ export type ChartType =
   | 'horizontal_bar'
   | 'airflow_dags'
   | 'schema_audit'
+  | 'excel_mapping'
 
 export interface GridLayout {
   i: string

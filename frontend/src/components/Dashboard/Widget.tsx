@@ -9,6 +9,7 @@ import { useWidgetTransfer } from '../../context/WidgetTransferContext'
 import { useTabTheme } from '../../context/TabThemeContext'
 import AirflowSection from '../Airflow/AirflowSection'
 import SchemaAuditSection from '../SchemaAudit/SchemaAuditSection'
+import ExcelMappingSection from '../ExcelMapping/ExcelMappingSection'
 import { LiveBadge } from '../common/LiveBadge'
 import type { Widget as WidgetType } from '../../types'
 import type { LiveStatus } from '../../hooks/useLiveStream'
@@ -25,6 +26,7 @@ const TYPE_STYLE: Record<string, { border: string; badge: string }> = {
   horizontal_bar: { border: 'border-l-cyan-400',    badge: 'bg-cyan-50 text-cyan-700' },
   airflow_dags:   { border: 'border-l-sky-500',     badge: 'bg-sky-50 text-sky-700' },
   schema_audit:   { border: 'border-l-purple-500',  badge: 'bg-purple-50 text-purple-700' },
+  excel_mapping:  { border: 'border-l-rose-400',    badge: 'bg-rose-50 text-rose-700' },
 }
 const FALLBACK = { border: 'border-l-slate-300', badge: 'bg-slate-100 text-slate-600' }
 
@@ -59,6 +61,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
   const hasSql = !!widget.sql?.trim()
   const isAirflow      = widget.chart_type === 'airflow_dags'
   const isSchemaAudit  = widget.chart_type === 'schema_audit'
+  const isExcelMapping = widget.chart_type === 'excel_mapping'
   const { headerBg: ctxHeaderBg, headerBorder: ctxHeaderBorder, airflowEnv: ctxAirflowEnv, schemaAuditEnv: ctxSchemaAuditEnv, tabPrefix } = useTabTheme()
   // Prefer widget-locked values (set at copy/move time) over live context
   const headerBg     = widget.lockedHeaderBg    ?? ctxHeaderBg
@@ -90,6 +93,10 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
   const [schemaAuditDownloading, setSchemaAuditDownloading] = useState(false)
   const schemaAuditRefreshRef = useRef<(() => void) | null>(null)
   const handleRegisterSchemaRefresh = useCallback((fn: () => void) => { schemaAuditRefreshRef.current = fn }, [])
+
+  // Excel mapping widget controls
+  const excelMappingRefreshRef = useRef<(() => void) | null>(null)
+  const handleRegisterExcelRefresh = useCallback((fn: () => void) => { excelMappingRefreshRef.current = fn }, [])
 
   async function handleSchemaAuditDownload() {
     const env = ctxSchemaAuditEnv ?? tabPrefix.toLowerCase()
@@ -309,7 +316,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             </>
           )}
 
-          {!isAirflow && !isSchemaAudit && (
+          {!isAirflow && !isSchemaAudit && !isExcelMapping && (
             <button
               title={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
               onMouseDown={noDrag}
@@ -323,7 +330,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             </button>
           )}
 
-          {!isAirflow && !isSchemaAudit && (
+          {!isAirflow && !isSchemaAudit && !isExcelMapping && (
             <button
               title={showData ? 'Show chart' : 'Show raw data'}
               onMouseDown={noDrag}
@@ -334,7 +341,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             </button>
           )}
 
-          {!isAirflow && !isSchemaAudit && (
+          {!isAirflow && !isSchemaAudit && !isExcelMapping && (
             <button
               title={showSql ? 'Hide SQL' : 'View / refine SQL'}
               onMouseDown={noDrag}
@@ -345,7 +352,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             </button>
           )}
 
-          {hasSql && widget.chart_type !== 'kpi' && !isSchemaAudit && (
+          {hasSql && widget.chart_type !== 'kpi' && !isSchemaAudit && !isExcelMapping && (
             <button
               title={widget.live ? 'Stop live updates' : 'Enable live updates for this widget'}
               onMouseDown={noDrag}
@@ -380,6 +387,17 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             </>
           )}
 
+          {isExcelMapping && (
+            <button
+              title="Refresh Excel mappings"
+              onMouseDown={noDrag}
+              onClick={() => excelMappingRefreshRef.current?.()}
+              className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors rounded"
+            >
+              <RefreshCw size={13} />
+            </button>
+          )}
+
           {isAirflow && (
             <>
               {airflowLiveStatus !== 'off' && <LiveBadge status={airflowLiveStatus} />}
@@ -402,7 +420,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             </>
           )}
 
-          {hasSql && widget.chart_type !== 'kpi' && !isSchemaAudit && (
+          {hasSql && widget.chart_type !== 'kpi' && !isSchemaAudit && !isExcelMapping && (
             <button
               title={widget.live ? 'Stop live updates' : 'Enable live updates for this widget'}
               onMouseDown={noDrag}
@@ -448,7 +466,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             </div>
           ) : (
             <>
-              {widget.ai_description && !isAirflow && !isSchemaAudit && (
+              {widget.ai_description && !isAirflow && !isSchemaAudit && !isExcelMapping && (
                 <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex-shrink-0">
                   <p className="text-[11px] text-slate-500 leading-relaxed">{widget.ai_description}</p>
                 </div>
@@ -474,7 +492,13 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
             </div>
           )}
 
-          {!isAirflow && !isSchemaAudit && !showSql && (
+          {isExcelMapping && (
+            <div className="flex-1 overflow-hidden min-h-0 p-3">
+              <ExcelMappingSection onRegisterRefresh={handleRegisterExcelRefresh} />
+            </div>
+          )}
+
+          {!isAirflow && !isSchemaAudit && !isExcelMapping && !showSql && (
             <div className="flex-1 overflow-auto p-3 min-h-0">
               {showData ? (
                 <DataTable data={widget.data} />
@@ -495,7 +519,7 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
           )}
 
           {/* SQL panel */}
-          {!isAirflow && !isSchemaAudit && showSql && (
+          {!isAirflow && !isSchemaAudit && !isExcelMapping && showSql && (
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden border-t border-violet-100">
               <div className="flex items-center justify-between px-3 py-1.5 bg-violet-50 border-b border-violet-100 flex-shrink-0">
                 <span className="text-[10px] font-semibold text-violet-700 uppercase tracking-wide">SQL Query</span>

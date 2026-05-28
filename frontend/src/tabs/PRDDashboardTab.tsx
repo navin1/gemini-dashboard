@@ -15,7 +15,7 @@ import { TabThemeContext } from '../context/TabThemeContext'
 
 const STORAGE_KEY = 'gd_ws_prd'
 const LEGACY_STORAGE_KEY = 'gd_ws_vendor'
-const SEED_IDS = ['vendor_tier_breakdown', 'vendor_offshore', 'vendor_billtype_bar', 'vendor_table', 'vendor_spend_by_tier', 'vendor_monthly', 'vendor_cap_exp_ftp', 'vendor_resource_count', 'vendor_airflow_dags', 'vendor_schema_audit']
+const SEED_IDS = ['vendor_tier_breakdown', 'vendor_offshore', 'vendor_billtype_bar', 'vendor_table', 'vendor_spend_by_tier', 'vendor_monthly', 'vendor_cap_exp_ftp', 'vendor_resource_count', 'vendor_airflow_dags', 'vendor_schema_audit', 'vendor_excel_mapping']
 
 function loadState(): { widgets: Widget[]; customKpis: CustomKpi[] } {
   try {
@@ -121,6 +121,14 @@ function makeSeeds(data: ScorecardVendor): Widget[] {
       ai_description: '',
       sql: '', data: [],
       layout: { i: 'vendor_schema_audit', x: 0, y: 39, w: 12, h: 12, minH: 8 },
+    },
+    {
+      id: 'vendor_excel_mapping', title: 'Excel Mapping',
+      chart_type: 'excel_mapping', x_axis: undefined, y_axis: [],
+      stacked: false, dual_axis: false,
+      ai_description: '',
+      sql: '', data: [],
+      layout: { i: 'vendor_excel_mapping', x: 0, y: 51, w: 12, h: 10, minH: 6 },
     },
   ]
 }

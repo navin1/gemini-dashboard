@@ -15,7 +15,7 @@ import { TabThemeContext } from '../context/TabThemeContext'
 
 const STORAGE_KEY = 'gd_ws_uat'
 const LEGACY_STORAGE_KEY = 'gd_ws_fte'
-const SEED_IDS = ['fte_spend_class', 'fte_capital_combo', 'fte_expense_combo', 'fte_table', 'fte_donut', 'fte_cap_exp_ftp', 'fte_airflow_dags', 'fte_schema_audit']
+const SEED_IDS = ['fte_spend_class', 'fte_capital_combo', 'fte_expense_combo', 'fte_table', 'fte_donut', 'fte_cap_exp_ftp', 'fte_airflow_dags', 'fte_schema_audit', 'fte_excel_mapping']
 
 function loadState(): { widgets: Widget[]; customKpis: CustomKpi[] } {
   try {
@@ -107,6 +107,14 @@ function makeSeeds(data: ScorecardFTE): Widget[] {
       ai_description: '',
       sql: '', data: [],
       layout: { i: 'fte_schema_audit', x: 0, y: 39, w: 12, h: 12, minH: 8 },
+    },
+    {
+      id: 'fte_excel_mapping', title: 'Excel Mapping',
+      chart_type: 'excel_mapping', x_axis: undefined, y_axis: [],
+      stacked: false, dual_axis: false,
+      ai_description: '',
+      sql: '', data: [],
+      layout: { i: 'fte_excel_mapping', x: 0, y: 51, w: 12, h: 10, minH: 6 },
     },
   ]
 }
