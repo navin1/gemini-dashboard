@@ -329,6 +329,19 @@ _DATA_FONT  = Font(name="Courier New", size=11)
 _CENTER     = Alignment(horizontal="center", vertical="center")
 _LEFT       = Alignment(horizontal="left",   vertical="center")
 
+_TAB_BLUE   = "4472C4"   # Summary sheet
+_TAB_GREEN  = "70AD47"   # No mismatches
+_TAB_ORANGE = "ED7D31"   # Has mismatches (table present on both sides)
+_TAB_RED    = "C00000"   # Entire table missing from SRC or TGT
+
+
+def _tab_color(summary: dict) -> str:
+    if summary["src_missing"] or summary["tgt_missing"]:
+        return _TAB_RED
+    if summary["has_mismatch"]:
+        return _TAB_ORANGE
+    return _TAB_GREEN
+
 
 def _style_header(ws, headers: list[str], col_widths: list[int]) -> None:
     for col_idx, (header, width) in enumerate(zip(headers, col_widths), start=1):
@@ -361,7 +374,7 @@ def _build_excel(summaries: list[dict], detail_by_tbl: dict[str, list[dict]]) ->
     # ── Summary sheet ────────────────────────────────────────────────────────
     ws_sum = wb.active
     ws_sum.title = "Summary"
-    ws_sum.sheet_properties.tabColor = "4472C4"
+    ws_sum.sheet_properties.tabColor = _TAB_BLUE
 
     sum_headers = [
         "Table Name", "SRC Column Name", "SRC Position",
@@ -404,7 +417,7 @@ def _build_excel(summaries: list[dict], detail_by_tbl: dict[str, list[dict]]) ->
         rows = detail_by_tbl.get(tbl, [])
 
         ws = wb.create_sheet(title=_safe_sheet_name(tbl))
-        ws.sheet_properties.tabColor = "4472C4"
+        ws.sheet_properties.tabColor = _tab_color(summary)
         _style_header(ws, tbl_headers, tbl_widths)
 
         for r_idx, dr in enumerate(rows, start=2):
