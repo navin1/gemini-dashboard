@@ -281,10 +281,34 @@ def _parse_json(raw: str) -> dict:
         raise ValueError("Model returned an empty response")
     if raw.startswith("```"):
         parts = raw.split("```")
-        raw = parts[1]
+        raw = parts[1].strip()
         if raw.startswith("json"):
-            raw = raw[4:]
-    return json.loads(raw.strip())
+            raw = raw[4:].strip()
+    if not raw:
+        raise ValueError("Model returned an empty JSON fence")
+    return json.loads(raw)
+
+
+def _safe_parse_agent_response(raw: str) -> dict:
+    """Parse JSON response with two fallbacks for malformed model output."""
+    try:
+        return _parse_json(raw)
+    except Exception:
+        pass
+    # Fallback 1: find the first {...} block anywhere in the text
+    import re as _re
+    m = _re.search(r'\{[\s\S]+\}', raw)
+    if m:
+        try:
+            return json.loads(m.group())
+        except Exception:
+            pass
+    # Fallback 2: wrap raw text as a plain text response
+    return {
+        "text": raw.strip() or "I wasn't able to format a response. Please try rephrasing.",
+        "intent": "text",
+        "suggested_questions": [],
+    }
 
 
 def _require_model():
@@ -625,8 +649,10 @@ def _execute_bq_call(fc, token: str | None) -> Part:
 
 
 _FINALIZE_PROMPT = (
-    "You have gathered enough data. Now provide your final answer as a JSON object "
-    "exactly matching the required schema. Do not call any more tools."
+    "You have gathered enough data. Respond with ONLY a raw JSON object — no markdown fences, "
+    "no prose outside the JSON. Required schema:\n"
+    '{"text": "<narrative>", "intent": "chart|table|text", '
+    '"widget": {<optional>}, "suggested_questions": ["..."]}'
 )
 
 
@@ -652,7 +678,7 @@ def _run_agent_loop(chat, user_prompt: str, token: str | None, max_tool_calls: i
         logger.warning("Agent loop ended with no text response — sending finalize prompt")
         response = chat.send_message(_FINALIZE_PROMPT)
 
-    return _parse_json(_response_text(response))
+    return _safe_parse_agent_response(_response_text(response))
 
 
 def agent_chat(
@@ -749,10 +775,15 @@ async def agent_chat_stream(
 
     yield {"type": "status", "message": "Formatting response…"}
     try:
-        result = _parse_json(_response_text(response))
+        result = _safe_parse_agent_response(_response_text(response))
         yield {"type": "result", "data": result}
     except Exception as exc:
-        yield {"type": "error", "message": f"Failed to parse AI response: {exc}"}
+        logger.error(f"Agent response parse failed: {exc}")
+        yield {"type": "result", "data": {
+            "text": "I encountered an issue formatting the response. Please try again.",
+            "intent": "text",
+            "suggested_questions": [],
+        }}
 
 
 def generate_pdf_description(title: str, chart_type: str, data_summary: str) -> str:
