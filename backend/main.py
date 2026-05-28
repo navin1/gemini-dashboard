@@ -34,6 +34,15 @@ seed()
 app = FastAPI(title="Gemini Workforce Dashboard", version="1.0.0")
 
 
+@app.on_event("startup")
+async def _pre_warm_schema():
+    """Fetch BQ schema in the background so the first agent call has it cached."""
+    import threading
+    import gemini_client
+    threading.Thread(target=gemini_client._get_schema, daemon=True, name="schema-prewarm").start()
+    logger.info("Schema pre-warm thread started")
+
+
 @app.middleware("http")
 async def _request_logger(request: Request, call_next):
     req_id = uuid.uuid4().hex[:8]

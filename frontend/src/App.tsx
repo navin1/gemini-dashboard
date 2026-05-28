@@ -532,7 +532,7 @@ export default function App() {
           </div>
 
           {/* ── Content — all tabs always mounted; inactive hidden via CSS ── */}
-          <main className="flex-1 min-h-0 overflow-auto pb-30">
+          <main className="flex-1 min-h-0 overflow-auto pb-4">
             {tabOrder.map((id) => {
               const fixed   = FIXED_TABS.find((t) => t.id === id)
               const custom  = customTabs.find((t) => t.id === id)
@@ -554,6 +554,10 @@ export default function App() {
               )
             })}
           </main>
+
+          {/* Spacer that reserves the collapsed ChatPanel height (54 px) in flex layout
+              so <main> never extends behind the floating panel */}
+          <div className="h-[54px] shrink-0" aria-hidden="true" />
 
           {/* ── Floating chat panel ──────────────────────────────────────── */}
           <ChatPanel
