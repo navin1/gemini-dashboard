@@ -14,7 +14,7 @@ function GoogleSignInButton() {
   const { setAuth } = useAuth()
 
   const login = useGoogleLogin({
-    scope: 'https://www.googleapis.com/auth/bigquery.readonly',
+    scope: 'https://www.googleapis.com/auth/bigquery https://www.googleapis.com/auth/cloud-platform',
     onSuccess: async (tokenResponse) => {
       const accessToken = tokenResponse.access_token
       try {
