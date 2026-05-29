@@ -61,7 +61,7 @@ async def run_nl_query(
     glossary_terms = [{"term": g.term, "definition": g.definition} for g in glossary]
 
     try:
-        widget_def = gemini_client.generate_widget(req.nl_query, glossary_terms)
+        widget_def = gemini_client.generate_widget(req.nl_query, glossary_terms, token)
     except Exception as e:
         msg = str(e)
         if "not initialised" in msg or "VERTEX_AI_PROJECT" in msg:
@@ -119,7 +119,7 @@ async def refine_query(
     glossary_terms = [{"term": g.term, "definition": g.definition} for g in glossary]
 
     try:
-        widget_def = gemini_client.refine_widget(req.sql, req.nl_modification, glossary_terms)
+        widget_def = gemini_client.refine_widget(req.sql, req.nl_modification, glossary_terms, token)
     except Exception as e:
         msg = str(e)
         if "not initialised" in msg or "VERTEX_AI_PROJECT" in msg:
