@@ -1,0 +1,1243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Gemini Workforce Dashboard — Executive Presentation</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --blue:   #2563EB;
+    --indigo: #4F46E5;
+    --sky:    #0EA5E9;
+    --teal:   #0D9488;
+    --violet: #7C3AED;
+    --slate0: #F8FAFC;
+    --slate1: #F1F5F9;
+    --slate2: #E2E8F0;
+    --slate3: #CBD5E1;
+    --slate5: #64748B;
+    --slate7: #334155;
+    --slate9: #0F172A;
+    --green:  #16A34A;
+    --amber:  #D97706;
+    --red:    #DC2626;
+  }
+
+  html, body { height: 100%; background: #1E293B; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+
+  /* ── Slideshow shell ──────────────────────────────────────────── */
+  .deck { position: relative; width: 100%; height: 100vh; overflow: hidden; }
+
+  .slide {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    background: var(--slate0);
+    opacity: 0; pointer-events: none;
+    transition: opacity .35s ease, transform .35s ease;
+    transform: translateX(40px);
+    overflow: hidden;
+  }
+  .slide.active  { opacity: 1; pointer-events: all; transform: translateX(0); }
+  .slide.exiting { opacity: 0; transform: translateX(-40px); }
+
+  /* ── Nav bar ──────────────────────────────────────────────────── */
+  .nav {
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+    z-index: 100;
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(15,23,42,.82); backdrop-filter: blur(10px);
+    border-radius: 40px; padding: 8px 18px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.35);
+  }
+  .nav button {
+    background: none; border: none; color: #94A3B8; cursor: pointer;
+    font-size: 18px; width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .15s, color .15s;
+  }
+  .nav button:hover { background: rgba(255,255,255,.1); color: #fff; }
+  .nav .counter { color: #94A3B8; font-size: 12px; min-width: 52px; text-align: center; letter-spacing: .05em; }
+  .nav .pip-row { display: flex; gap: 5px; align-items: center; }
+  .pip { width: 6px; height: 6px; border-radius: 50%; background: #475569; cursor: pointer; transition: background .2s, transform .2s; }
+  .pip.on { background: #60A5FA; transform: scale(1.4); }
+
+  /* ── Shared layout helpers ────────────────────────────────────── */
+  .slide-header {
+    padding: 38px 56px 0;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .tag {
+    font-size: 10px; font-weight: 700; letter-spacing: .15em;
+    text-transform: uppercase; color: var(--blue);
+  }
+  .slide-title {
+    font-size: 28px; font-weight: 700; color: var(--slate9); line-height: 1.2;
+  }
+  .slide-sub {
+    font-size: 14px; color: var(--slate5); margin-top: 2px;
+  }
+  .divider { height: 2px; background: linear-gradient(90deg, var(--blue) 0%, var(--sky) 60%, transparent 100%); margin: 18px 56px 0; border-radius: 2px; }
+  .body { flex: 1; padding: 24px 56px 80px; overflow: auto; }
+
+  /* ── Cards ───────────────────────────────────────────────────── */
+  .card {
+    background: #fff; border-radius: 12px; padding: 20px 22px;
+    border: 1px solid var(--slate2);
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+  .card-title { font-size: 12px; font-weight: 700; color: var(--slate5); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 10px; }
+
+  .grid2  { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid3  { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+  .grid4  { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; }
+
+  /* ── Badge / pill ─────────────────────────────────────────────── */
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 20px;
+    font-size: 11px; font-weight: 600;
+  }
+  .badge-blue   { background: #DBEAFE; color: #1D4ED8; }
+  .badge-green  { background: #DCFCE7; color: #15803D; }
+  .badge-violet { background: #EDE9FE; color: #5B21B6; }
+  .badge-amber  { background: #FEF3C7; color: #92400E; }
+  .badge-sky    { background: #E0F2FE; color: #0369A1; }
+  .badge-slate  { background: var(--slate1); color: var(--slate7); }
+
+  /* ── Bullet list ─────────────────────────────────────────────── */
+  .blist { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .blist li { display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; color: var(--slate7); line-height: 1.5; }
+  .blist li::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--blue); margin-top: 5px; flex-shrink: 0; }
+  .blist.check li::before { content: '✓'; width: auto; height: auto; background: none; color: var(--green); font-size: 13px; font-weight: 700; margin-top: 0; }
+
+  /* ── Stat boxes ──────────────────────────────────────────────── */
+  .stat { text-align: center; padding: 18px 12px; }
+  .stat .num { font-size: 32px; font-weight: 800; color: var(--slate9); line-height: 1; }
+  .stat .lbl { font-size: 11px; font-weight: 600; color: var(--slate5); margin-top: 4px; text-transform: uppercase; letter-spacing: .08em; }
+  .stat .sub { font-size: 11px; color: var(--slate5); margin-top: 2px; }
+
+  /* ── Flow diagram ────────────────────────────────────────────── */
+  .flow { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
+  .flow-box {
+    background: #fff; border: 1.5px solid var(--slate2); border-radius: 10px;
+    padding: 10px 14px; font-size: 12px; font-weight: 600; color: var(--slate7);
+    text-align: center; min-width: 90px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+  }
+  .flow-box .icon { font-size: 18px; }
+  .flow-box.blue  { border-color: #93C5FD; background: #EFF6FF; color: #1E40AF; }
+  .flow-box.green { border-color: #86EFAC; background: #F0FDF4; color: #15803D; }
+  .flow-box.violet{ border-color: #C4B5FD; background: #F5F3FF; color: #5B21B6; }
+  .flow-box.sky   { border-color: #7DD3FC; background: #F0F9FF; color: #0369A1; }
+  .flow-box.amber { border-color: #FCD34D; background: #FFFBEB; color: #92400E; }
+  .arrow { color: var(--slate3); font-size: 20px; padding: 0 6px; flex-shrink: 0; }
+  .arrow.vert { transform: rotate(90deg); }
+
+  /* ── Arch diagram boxes ──────────────────────────────────────── */
+  .arch-row { display: flex; align-items: stretch; gap: 12px; margin-bottom: 12px; }
+  .arch-box {
+    flex: 1; background: #fff; border-radius: 10px; padding: 14px 16px;
+    border: 1px solid var(--slate2); font-size: 12px; color: var(--slate7);
+  }
+  .arch-box h4 { font-size: 11px; font-weight: 700; color: var(--slate5); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; }
+  .arch-box .item { display: flex; align-items: center; gap: 6px; padding: 3px 0; border-bottom: 1px solid var(--slate1); }
+  .arch-box .item:last-child { border-bottom: none; }
+  .arch-box .item .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ── Cost table ──────────────────────────────────────────────── */
+  .cost-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .cost-table th { background: var(--slate1); padding: 9px 14px; text-align: left; font-weight: 700; color: var(--slate5); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+  .cost-table td { padding: 9px 14px; border-bottom: 1px solid var(--slate1); color: var(--slate7); vertical-align: top; }
+  .cost-table tr:last-child td { border-bottom: none; }
+  .cost-table tr:hover td { background: var(--slate0); }
+  .cost-total td { font-weight: 700; color: var(--slate9); background: #EFF6FF !important; }
+
+  /* ── Timeline / roadmap ──────────────────────────────────────── */
+  .timeline { display: flex; flex-direction: column; gap: 0; }
+  .tl-item { display: flex; gap: 16px; }
+  .tl-left { display: flex; flex-direction: column; align-items: center; width: 32px; }
+  .tl-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--blue); flex-shrink: 0; margin-top: 3px; }
+  .tl-line { flex: 1; width: 2px; background: var(--slate2); margin: 4px 0; }
+  .tl-item:last-child .tl-line { display: none; }
+  .tl-content { padding-bottom: 16px; }
+  .tl-content h4 { font-size: 13px; font-weight: 700; color: var(--slate9); }
+  .tl-content p  { font-size: 12px; color: var(--slate5); margin-top: 2px; }
+
+  /* ── Slide 1 — Title ─────────────────────────────────────────── */
+  .title-slide {
+    background: linear-gradient(145deg, #EFF6FF 0%, #F5F3FF 40%, #F0F9FF 100%);
+    display: flex; flex-direction: column; justify-content: center; align-items: flex-start;
+    padding: 0 80px;
+  }
+  .title-slide .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; color: var(--blue); margin-bottom: 14px; }
+  .title-slide h1 { font-size: 46px; font-weight: 800; color: var(--slate9); line-height: 1.1; max-width: 700px; }
+  .title-slide h1 span { color: var(--blue); }
+  .title-slide .tagline { font-size: 18px; color: var(--slate5); margin-top: 14px; max-width: 560px; line-height: 1.5; }
+  .title-slide .meta { margin-top: 48px; display: flex; align-items: center; gap: 24px; }
+  .title-slide .meta-item { font-size: 12px; color: var(--slate5); }
+  .title-slide .meta-item strong { display: block; font-size: 13px; color: var(--slate7); }
+  .title-badges { display: flex; gap: 10px; margin-top: 28px; flex-wrap: wrap; }
+
+  .logo-stripe {
+    position: absolute; right: 0; top: 0; bottom: 0; width: 340px;
+    background: linear-gradient(180deg, #DBEAFE 0%, #EDE9FE 50%, #E0F2FE 100%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+    padding: 40px 30px;
+  }
+  .logo-card {
+    background: rgba(255,255,255,.8); backdrop-filter: blur(4px);
+    border-radius: 12px; padding: 16px 20px; width: 100%;
+    border: 1px solid rgba(255,255,255,.9);
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    text-align: center;
+  }
+  .logo-card .lc-icon { font-size: 28px; margin-bottom: 4px; }
+  .logo-card .lc-name { font-size: 12px; font-weight: 700; color: var(--slate7); }
+  .logo-card .lc-role { font-size: 11px; color: var(--slate5); }
+
+  /* ── Highlights band ─────────────────────────────────────────── */
+  .highlight-band {
+    display: flex; gap: 0;
+    border-radius: 12px; overflow: hidden;
+    border: 1px solid var(--slate2);
+    margin-bottom: 18px;
+  }
+  .hb-item {
+    flex: 1; padding: 16px 18px; background: #fff; text-align: center;
+    border-right: 1px solid var(--slate2);
+  }
+  .hb-item:last-child { border-right: none; }
+  .hb-item .hb-icon { font-size: 22px; margin-bottom: 4px; }
+  .hb-item .hb-title { font-size: 12px; font-weight: 700; color: var(--slate9); }
+  .hb-item .hb-desc  { font-size: 11px; color: var(--slate5); margin-top: 2px; line-height: 1.4; }
+
+  /* ── Perf table ──────────────────────────────────────────────── */
+  .perf-row { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--slate1); font-size: 12.5px; }
+  .perf-row:last-child { border-bottom: none; }
+  .perf-label { flex: 1; color: var(--slate7); }
+  .perf-before { width: 80px; text-align: center; color: var(--red); font-weight: 600; }
+  .perf-after  { width: 80px; text-align: center; color: var(--green); font-weight: 600; }
+  .perf-bar-wrap { width: 140px; height: 6px; background: var(--slate1); border-radius: 3px; }
+  .perf-bar { height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--green), var(--sky)); }
+
+  /* ── Section color band ──────────────────────────────────────── */
+  .band { padding: 4px 56px; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+  .band-blue   { background: #DBEAFE; color: #1D4ED8; }
+  .band-green  { background: #DCFCE7; color: #15803D; }
+  .band-violet { background: #EDE9FE; color: #5B21B6; }
+
+  /* ── Security block ──────────────────────────────────────────── */
+  .sec-item { display: flex; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--slate1); }
+  .sec-item:last-child { border-bottom: none; }
+  .sec-icon { font-size: 20px; flex-shrink: 0; width: 32px; text-align: center; }
+  .sec-title { font-size: 13px; font-weight: 700; color: var(--slate9); }
+  .sec-desc  { font-size: 12px; color: var(--slate5); margin-top: 2px; line-height: 1.4; }
+
+  /* ── Comparison table ────────────────────────────────────────── */
+  .cmp-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .cmp-table th { padding: 8px 14px; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+  .cmp-table td { padding: 8px 14px; border-bottom: 1px solid var(--slate1); }
+  .cmp-table tr:last-child td { border-bottom: none; }
+  .cmp-table .yes { color: var(--green); font-weight: 700; }
+  .cmp-table .no  { color: var(--slate3); }
+  .cmp-table .partial { color: var(--amber); font-weight: 600; }
+  .cmp-highlight { background: #EFF6FF; }
+
+  /* ── Step boxes ──────────────────────────────────────────────── */
+  .step-col { display: flex; flex-direction: column; gap: 8px; }
+  .step {
+    display: flex; gap: 12px; align-items: flex-start;
+    background: #fff; border-radius: 10px; padding: 12px 14px;
+    border: 1px solid var(--slate2); font-size: 12px;
+  }
+  .step-num {
+    width: 22px; height: 22px; border-radius: 50%; background: var(--blue);
+    color: #fff; font-size: 11px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .step-body { flex: 1; }
+  .step-body strong { display: block; font-size: 12px; font-weight: 700; color: var(--slate9); }
+  .step-body span { font-size: 11px; color: var(--slate5); }
+
+  /* scrollbar */
+  .body::-webkit-scrollbar { width: 4px; }
+  .body::-webkit-scrollbar-thumb { background: var(--slate2); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<div class="deck" id="deck">
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SLIDE 1 — TITLE
+═══════════════════════════════════════════════════════════════════ -->
+<div class="slide title-slide active" style="position:relative;overflow:hidden;">
+  <div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 80px;padding-right:380px;">
+    <div class="eyebrow">Executive Briefing · May 2026</div>
+    <h1>Gemini<br><span>Workforce</span><br>Dashboard</h1>
+    <div class="tagline">AI-powered workforce & spend intelligence — natural language to live charts in seconds, not weeks.</div>
+    <div class="title-badges">
+      <span class="badge badge-blue">🤖 Gemini 2.5 Flash</span>
+      <span class="badge badge-sky">☁️ Cloud Run</span>
+      <span class="badge badge-violet">📊 BigQuery</span>
+      <span class="badge badge-green">⚡ Real-time Agent</span>
+    </div>
+    <div class="meta">
+      <div class="meta-item"><strong>Audience</strong>Senior Managers · Architects</div>
+      <div class="meta-item"><strong>Scope</strong>Platform Overview &amp; Technical Deep-Dive</div>
+      <div class="meta-item"><strong>Status</strong>Active Development</div>
+    </div>
+  </div>
+  <div class="logo-stripe">
+    <div class="logo-card"><div class="lc-icon">🤖</div><div class="lc-name">Gemini 2.5 Flash</div><div class="lc-role">AI Agent · NL→SQL · Chat</div></div>
+    <div class="logo-card"><div class="lc-icon">📊</div><div class="lc-name">Google BigQuery</div><div class="lc-role">Petabyte-scale Data Warehouse</div></div>
+    <div class="logo-card"><div class="lc-icon">⚛️</div><div class="lc-name">React + TypeScript</div><div class="lc-role">Drag-drop Dashboard SPA</div></div>
+    <div class="logo-card"><div class="lc-icon">🐍</div><div class="lc-name">FastAPI (Python)</div><div class="lc-role">Async REST + SSE Backend</div></div>
+    <div class="logo-card"><div class="lc-icon">🐳</div><div class="lc-name">Cloud Run</div><div class="lc-role">Serverless Container · Scale-to-Zero</div></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SLIDE 2 — PROBLEM STATEMENT
+═══════════════════════════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-header">
+    <div class="tag">01 · Problem Statement</div>
+    <div class="slide-title">Workforce insights are too slow, too manual, too siloed</div>
+    <div class="slide-sub">Every data question becomes a ticket. Every chart takes days. Every manager is blocked.</div>
+  </div>
+  <div class="divider"></div>
+  <div class="body">
+    <div class="grid2" style="margin-bottom:16px;">
+      <div class="card">
+        <div class="card-title">📋 Reporting Bottleneck</div>
+        <ul class="blist">
+          <li>Ad-hoc spend questions require SQL engineers — 2–5 day turnaround</li>
+          <li>Monthly workforce reports are manually assembled from multiple BigQuery exports</li>
+          <li>Business leaders make decisions on stale snapshots, not live data</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title">📦 Data Siloed &amp; Opaque</div>
+        <ul class="blist">
+          <li>Workforce, vendor, spend and FTE data lives across 3 environments (DEV / UAT / PRD)</li>
+          <li>No single view — managers switch between BigQuery, Excel and email threads</li>
+          <li>Schema knowledge locked inside a few engineers' heads</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title">🔐 Access &amp; Governance Friction</div>
+        <ul class="blist">
+          <li>Tableau / PowerBI licenses are expensive and require analyst training</li>
+          <li>Granting direct BigQuery access to non-technical users is a security risk</li>
+          <li>No per-user audit trail for data access</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title">🔄 No Self-Service Analytics</div>
+        <ul class="blist">
+          <li>"Top 10 vendors by offshore spend this quarter" — requires a Jira ticket</li>
+          <li>Dashboard requests pile up in the BI team's backlog</li>
+          <li>Non-technical PMs can't explore data independently</li>
+        </ul>
+      </div>
+    </div>
+    <div class="card" style="background:linear-gradient(135deg,#FFF7ED,#FFFBEB);border-color:#FDE68A;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="font-size:28px;">⚠️</div>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#92400E;">Business Impact</div>
+          <div style="font-size:12px;color:#78350F;margin-top:3px;">Delayed workforce decisions cost time and budget. When capital vs. expense classifications are wrong by even one month, it affects financial reporting across the entire portfolio.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SLIDE 3 — SOLUTION
+═══════════════════════════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-header">
+    <div class="tag">02 · Solution</div>
+    <div class="slide-title">Ask any question in plain English — get a live chart in seconds</div>
+    <div class="slide-sub">Gemini Workforce Dashboard puts real-time BigQuery analytics in the hands of every manager, with zero SQL.</div>
+  </div>
+  <div class="divider"></div>
+  <div class="body">
+    <div class="highlight-band">
+      <div class="hb-item"><div class="hb-icon">💬</div><div class="hb-title">Natural Language Queries</div><div class="hb-desc">Type plain English — AI generates BigQuery SQL, runs it, and renders a chart</div></div>
+      <div class="hb-item"><div class="hb-icon">🤖</div><div class="hb-title">Conversational AI Agent</div><div class="hb-desc">Multi-turn chat with live data — follow-up, refine, and drill down naturally</div></div>
+      <div class="hb-item"><div class="hb-icon">📊</div><div class="hb-title">Live Drag-Drop Dashboard</div><div class="hb-desc">Add widgets from chat, rearrange layouts, and pin favourites per user</div></div>
+      <div class="hb-item"><div class="hb-icon">🌐</div><div class="hb-title">Multi-Environment</div><div class="hb-desc">DEV / UAT / PRD tabs each with isolated data and dedicated scorecard views</div></div>
+      <div class="hb-item"><div class="hb-icon">📄</div><div class="hb-title">PDF Export</div><div class="hb-desc">One-click branded PDF with AI-generated narrative for each widget</div></div>
+    </div>
+    <div class="grid2">
+      <div>
+        <div class="card">
+          <div class="card-title">Built-in Scorecard Views</div>
+          <ul class="blist check">
+            <li>FTE &amp; Hierarchy — headcount, capital vs. expense, monthly FTP</li>
+            <li>Vendor Summary — offshore/onshore split, tier breakdown, YTD spend</li>
+            <li>Hierarchy Drill — org-level spend waterfall with vendor mix</li>
+            <li>Airflow DAG monitor — live pipeline health per environment</li>
+            <li>Schema Audit — cross-environment data quality checks</li>
+            <li>Excel Mapping — source-to-BigQuery field lineage preview</li>
+          </ul>
+        </div>
+      </div>
+      <div>
+        <div class="card" style="margin-bottom:12px;">
+          <div class="card-title">Who Benefits</div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;gap:10px;align-items:center;font-size:12.5px;"><span style="font-size:16px;">👔</span><div><strong style="color:var(--slate9);">Senior Managers</strong><br><span style="color:var(--slate5);">Self-service spend insight without waiting on BI</span></div></div>
+            <div style="display:flex;gap:10px;align-items:center;font-size:12.5px;"><span style="font-size:16px;">🏗️</span><div><strong style="color:var(--slate9);">Solution Architects</strong><br><span style="color:var(--slate5);">Live environment health, schema validation, pipeline monitoring</span></div></div>
+            <div style="display:flex;gap:10px;align-items:center;font-size:12.5px;"><span style="font-size:16px;">📋</span><div><strong style="color:var(--slate9);">Program Managers</strong><br><span style="color:var(--slate5);">Portfolio spend, intake status, resource allocation at a glance</span></div></div>
+            <div style="display:flex;gap:10px;align-items:center;font-size:12.5px;"><span style="font-size:16px;">💰</span><div><strong style="color:var(--slate9);">Finance Teams</strong><br><span style="color:var(--slate5);">Capital vs. expense classification, YTD vs. budget variance</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SLIDE 4 — ARCHITECTURE
+═══════════════════════════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-header">
+    <div class="tag">03 · Architecture</div>
+    <div class="slide-title">Single-container deployment on Cloud Run</div>
+    <div class="slide-sub">React SPA + FastAPI backend ship as one Docker image. Scale-to-zero, no idle cost.</div>
+  </div>
+  <div class="divider"></div>
+  <div class="body">
+
+    <!-- Architecture visual -->
+    <div style="display:grid;grid-template-columns:1fr 2px 1fr 2px 1fr;gap:0;margin-bottom:16px;background:var(--slate1);border-radius:14px;overflow:hidden;border:1px solid var(--slate2);">
+
+      <!-- Browser -->
+      <div style="background:#fff;padding:18px 16px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--blue);margin-bottom:10px;">Browser (Client)</div>
+        <div class="arch-box" style="margin-bottom:8px;border-color:#93C5FD;background:#EFF6FF;">
+          <h4 style="color:#1D4ED8;">React SPA</h4>
+          <div class="item"><div class="dot" style="background:#60A5FA;"></div>Dashboard Grid (React Grid Layout)</div>
+          <div class="item"><div class="dot" style="background:#60A5FA;"></div>Scorecard Tabs (FTE / Vendor / Hierarchy)</div>
+          <div class="item"><div class="dot" style="background:#60A5FA;"></div>AI Chat Panel (SSE streaming)</div>
+          <div class="item"><div class="dot" style="background:#60A5FA;"></div>Chart Library (Recharts)</div>
+          <div class="item"><div class="dot" style="background:#60A5FA;"></div>DataTable with pagination &amp; sort</div>
+          <div class="item"><div class="dot" style="background:#60A5FA;"></div>Query Bar, Glossary, Favorites</div>
+        </div>
+        <div style="font-size:10px;color:var(--slate5);text-align:center;">TypeScript · Vite · Tailwind CSS</div>
+      </div>
+
+      <div style="background:var(--slate2);"></div>
+
+      <!-- Cloud Run -->
+      <div style="background:#F5F3FF;padding:18px 16px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--violet);margin-bottom:10px;">Cloud Run Container</div>
+        <div class="arch-box" style="margin-bottom:8px;border-color:#C4B5FD;background:#fff;">
+          <h4 style="color:#5B21B6;">FastAPI Backend</h4>
+          <div class="item"><div class="dot" style="background:#A78BFA;"></div>POST /api/query — NL→SQL widget</div>
+          <div class="item"><div class="dot" style="background:#A78BFA;"></div>POST /api/chat + /stream — AI agent</div>
+          <div class="item"><div class="dot" style="background:#A78BFA;"></div>GET  /api/scorecard/{fte,vendor,hierarchy}</div>
+          <div class="item"><div class="dot" style="background:#A78BFA;"></div>POST /api/pdf — Playwright PDF export</div>
+          <div class="item"><div class="dot" style="background:#A78BFA;"></div>CRUD /api/glossary, /api/favorites</div>
+          <div class="item"><div class="dot" style="background:#A78BFA;"></div>GET  /api/health</div>
+        </div>
+        <div class="arch-box" style="border-color:#C4B5FD;background:#fff;">
+          <h4 style="color:#5B21B6;">Local State (SQLite)</h4>
+          <div class="item"><div class="dot" style="background:#A78BFA;"></div>Glossary terms</div>
+          <div class="item"><div class="dot" style="background:#A78BFA;"></div>Saved favorites</div>
+        </div>
+        <div style="font-size:10px;color:var(--slate5);text-align:center;margin-top:8px;">Python 3.12 · uvicorn · asyncio</div>
+      </div>
+
+      <div style="background:var(--slate2);"></div>
+
+      <!-- GCP Services -->
+      <div style="background:#F0FDF4;padding:18px 16px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--teal);margin-bottom:10px;">Google Cloud Services</div>
+        <div class="arch-box" style="margin-bottom:8px;border-color:#6EE7B7;background:#fff;">
+          <h4 style="color:#0F766E;">Vertex AI (Gemini 2.5 Flash)</h4>
+          <div class="item"><div class="dot" style="background:#34D399;"></div>NL→SQL generation</div>
+          <div class="item"><div class="dot" style="background:#34D399;"></div>Agent loop with tool calling</div>
+          <div class="item"><div class="dot" style="background:#34D399;"></div>Intent classification</div>
+          <div class="item"><div class="dot" style="background:#34D399;"></div>PDF narrative generation</div>
+        </div>
+        <div class="arch-box" style="margin-bottom:8px;border-color:#6EE7B7;background:#fff;">
+          <h4 style="color:#0F766E;">BigQuery</h4>
+          <div class="item"><div class="dot" style="background:#34D399;"></div>Workforce &amp; spend data tables</div>
+          <div class="item"><div class="dot" style="background:#34D399;"></div>Schema introspection at startup</div>
+          <div class="item"><div class="dot" style="background:#34D399;"></div>Ad-hoc query execution</div>
+        </div>
+        <div class="arch-box" style="border-color:#6EE7B7;background:#fff;">
+          <h4 style="color:#0F766E;">Google OAuth2 API</h4>
+          <div class="item"><div class="dot" style="background:#34D399;"></div>User identity resolution</div>
+          <div class="item"><div class="dot" style="background:#34D399;"></div>Per-request BQ credential scoping</div>
+        </div>
+        <div style="font-size:10px;color:var(--slate5);text-align:center;margin-top:8px;">google-cloud-bigquery · google-cloud-aiplatform</div>
+      </div>
+    </div>
+
+    <div class="grid3" style="margin-top:0px;">
+      <div class="card" style="display:flex;gap:10px;align-items:center;">
+        <div style="font-size:22px;">🐳</div>
+        <div><div style="font-size:12px;font-weight:700;color:var(--slate9);">One Docker Image</div><div style="font-size:11px;color:var(--slate5);">React SPA built into FastAPI's static/ folder — single port 8080</div></div>
+      </div>
+      <div class="card" style="display:flex;gap:10px;align-items:center;">
+        <div style="font-size:22px;">📡</div>
+        <div><div style="font-size:12px;font-weight:700;color:var(--slate9);">SSE Streaming</div><div style="font-size:11px;color:var(--slate5);">Agent status events flow to the UI in real-time via Server-Sent Events</div></div>
+      </div>
+      <div class="card" style="display:flex;gap:10px;align-items:center;">
+        <div style="font-size:22px;">📐</div>
+        <div><div style="font-size:12px;font-weight:700;color:var(--slate9);">Layout in localStorage</div><div style="font-size:11px;color:var(--slate5);">Widget positions persist per-user in browser — no server-side layout DB needed</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SLIDE 5 — AGENT INTERACTION FLOW
+═══════════════════════════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-header">
+    <div class="tag">04 · Agent Interaction</div>
+    <div class="slide-title">How the AI agent answers a question end-to-end</div>
+    <div class="slide-sub">Two paths: a fast conversational path (~1s) and an agent loop with live BigQuery tool calls (~3–6s).</div>
+  </div>
+  <div class="divider"></div>
+  <div class="body">
+
+    <div class="grid2" style="gap:20px;">
+      <!-- Fast path -->
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <span class="badge badge-green">⚡ Fast Path</span>
+          <span style="font-size:11px;color:var(--slate5);">~1s · No BigQuery call · Conversational &amp; definitional questions</span>
+        </div>
+        <div class="step-col">
+          <div class="step"><div class="step-num">1</div><div class="step-body"><strong>User message arrives</strong><span>e.g. "What does YTD mean?" / "Explain capital vs expense"</span></div></div>
+          <div class="step"><div class="step-num">2</div><div class="step-body"><strong>Intent Classifier (0ms)</strong><span>Regex check — no analytical keywords → route to fast path</span></div></div>
+          <div class="step"><div class="step-num">3</div><div class="step-body"><strong>Single Gemini call</strong><span>chat_turn() — no tools attached, schema context injected, glossary applied</span></div></div>
+          <div class="step"><div class="step-num">4</div><div class="step-body"><strong>JSON response → SSE</strong><span>{ text, intent:"explain", suggested_questions } streamed immediately</span></div></div>
+        </div>
+      </div>
+
+      <!-- Agent path -->
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <span class="badge badge-blue">🤖 Agent Path</span>
+          <span style="font-size:11px;color:var(--slate5);">3–6s · Live BQ queries · Data, chart &amp; analysis questions</span>
+        </div>
+        <div class="step-col">
+          <div class="step"><div class="step-num">1</div><div class="step-body"><strong>Intent Classifier → Agent</strong><span>e.g. "Show me top 10 vendors by YTD spend" → analytical keywords detected</span></div></div>
+          <div class="step"><div class="step-num">2</div><div class="step-body"><strong>Contextual Hints (parallel)</strong><span>Matching keyword columns fetched concurrently via ThreadPoolExecutor — cached 10 min</span></div></div>
+          <div class="step"><div class="step-num">3</div><div class="step-body"><strong>Agent Loop (max 4 rounds)</strong><span>Gemini reasons → calls run_bigquery_query tool → BQ executes → result back to Gemini</span></div></div>
+          <div class="step"><div class="step-num">4</div><div class="step-body"><strong>Status events stream to UI</strong><span>"Analyzing…" → "Running 2 queries in parallel (step 1)" → "Formatting…"</span></div></div>
+          <div class="step"><div class="step-num">5</div><div class="step-body"><strong>Final JSON + widget data</strong><span>Route serves { text, intent, widget{sql,chart_type,data}, suggested_questions } — BQ result reused from cache</span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:16px;background:#fff;border-radius:12px;border:1px solid var(--slate2);padding:14px 18px;">
+      <div style="font-size:11px;font-weight:700;color:var(--slate5);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">Agent Tool: run_bigquery_query</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div style="font-size:12px;color:var(--slate7);flex:1;">The only tool the agent has is <code style="background:var(--slate1);padding:1px 5px;border-radius:3px;font-size:11px;">run_bigquery_query(sql)</code>. Gemini can call it multiple times per turn — first to discover filter values (<code style="background:var(--slate1);padding:1px 5px;border-radius:3px;font-size:11px;">SELECT DISTINCT</code>), then to fetch the actual data. Results are returned to Gemini as structured JSON. All tool calls within a round run in parallel via asyncio.gather.</div>
+        <div style="display:flex;gap:8px;flex-direction:column;flex-shrink:0;">
+          <span class="badge badge-blue">Tool calls parallelized</span>
+          <span class="badge badge-green">60s result cache</span>
+          <span class="badge badge-violet">Max 4 BQ round-trips</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SLIDE 6 — KEY FEATURES
+═══════════════════════════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-header">
+    <div class="tag">05 · Key Features</div>
+    <div class="slide-title">A full analytics platform — not just a chat interface</div>
+  </div>
+  <div class="divider"></div>
+  <div class="body">
+    <div class="grid3">
+      <div class="card">
+        <div class="card-title">🗨️ AI Chat + Streaming</div>
+        <ul class="blist">
+          <li>Multi-turn conversation with full history context</li>
+          <li>Status events stream in real-time (SSE)</li>
+          <li>3 suggested follow-up questions per response</li>
+          <li>Intent routing: conversational vs. analytical</li>
+          <li>Glossary-aware — custom term mappings applied to every prompt</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title">📊 Dynamic Widget Dashboard</div>
+        <ul class="blist">
+          <li>Drag-and-drop layout via React Grid Layout</li>
+          <li>8 chart types: bar, stacked, line, combo, donut, pie, table, KPI, horizontal bar</li>
+          <li>Add widget directly from chat response</li>
+          <li>Live / static toggle per widget</li>
+          <li>Layout persisted per-user in localStorage</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title">📋 Scorecard Views</div>
+        <ul class="blist">
+          <li>FTE &amp; Hierarchy: KPI cards, monthly FTP/spend, capital vs. expense</li>
+          <li>Vendor Summary: tier breakdown, offshore/onshore, resource count</li>
+          <li>Hierarchy Drill: org-level vendor spend cascade</li>
+          <li>5-minute server-side TTL cache — fast repeated loads</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title">🔍 NL Query Bar</div>
+        <ul class="blist">
+          <li>One-line natural language → instant chart widget</li>
+          <li>Refine existing widget with follow-up instruction</li>
+          <li>Direct SQL mode for power users</li>
+          <li>Glossary terms automatically injected</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title">📄 PDF Export</div>
+        <ul class="blist">
+          <li>Full dashboard snapshot via Playwright headless Chrome</li>
+          <li>Branded header with logo + timestamp</li>
+          <li>AI-generated narrative per widget section</li>
+          <li>Page breaks, headers &amp; footers on every page</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title">🛠️ Governance Tools</div>
+        <ul class="blist">
+          <li>Glossary manager — map business terms to BQ filters</li>
+          <li>Hidden entity mappings (JSON config) for SQL injection</li>
+          <li>Schema Audit widget — cross-environment column checks</li>
+          <li>Excel Mapping — source-to-BigQuery field lineage</li>
+          <li>Airflow DAG monitor — pipeline health per environment</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SLIDE 7 — TECH STACK
+═══════════════════════════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-header">
+    <div class="tag">06 · Technology Stack</div>
+    <div class="slide-title">Modern, cloud-native, open-source foundation</div>
+    <div class="slide-sub">Every component is a Google Cloud or widely-adopted OSS library — no proprietary lock-in below the GCP layer.</div>
+  </div>
+  <div class="divider"></div>
+  <div class="body">
+    <div class="grid2">
+      <div>
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-title">🖥️ Frontend</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;color:var(--slate7);">
+            <div style="display:flex;gap:6px;align-items:center;"><span class="badge badge-blue" style="font-size:10px;">⚛️ React 18</span> Component UI</div>
+            <div style="display:flex;gap:6px;align-items:center;"><span class="badge badge-sky" style="font-size:10px;">TS</span> TypeScript</div>
+            <div style="display:flex;gap:6px;align-items:center;"><span class="badge badge-violet" style="font-size:10px;">⚡ Vite</span> Dev + build</div>
+            <div style="display:flex;gap:6px;align-items:center;"><span class="badge badge-slate" style="font-size:10px;">🌊 Tailwind</span> CSS utility</div>
+            <div style="display:flex;gap:6px;align-items:center;"><span class="badge badge-green" style="font-size:10px;">📈 Recharts</span> All chart types</div>
+            <div style="display:flex;gap:6px;align-items:center;"><span class="badge badge-amber" style="font-size:10px;">📐 RGL</span> Drag-drop grid</div>
+            <div style="display:flex;gap:6px;align-items:center;"><span class="badge badge-slate" style="font-size:10px;">🔷 Lucide</span> Icon system</div>
+            <div style="display:flex;gap:6px;align-items:center;"><span class="badge badge-blue" style="font-size:10px;">🔄 TanStack</span> Data fetching</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">🤖 AI / ML</div>
+          <div style="font-size:12.5px;color:var(--slate7);display:flex;flex-direction:column;gap:7px;">
+            <div><strong>Gemini 2.5 Flash</strong> — primary model (NL→SQL, agent, PDF narrative)</div>
+            <div><strong>Vertex AI SDK</strong> — GenerativeModel, function calling, tool use</div>
+            <div><strong>Function Declaration</strong> — run_bigquery_query tool schema</div>
+            <div><strong>System instructions</strong> — schema + few-shot + axis rules injected per call</div>
+            <div><strong>Intent routing</strong> — regex classifier gates agent vs. chat_turn path</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-title">🐍 Backend</div>
+          <div style="font-size:12.5px;color:var(--slate7);display:flex;flex-direction:column;gap:7px;">
+            <div><strong>FastAPI</strong> — async REST API, SSE via StreamingResponse</div>
+            <div><strong>uvicorn</strong> — ASGI server, production-grade</div>
+            <div><strong>asyncio + ThreadPoolExecutor</strong> — parallel BQ calls</div>
+            <div><strong>SQLAlchemy + SQLite</strong> — glossary &amp; favorites persistence</div>
+            <div><strong>Playwright</strong> — headless Chrome for PDF rendering</div>
+            <div><strong>Pydantic v2</strong> — request/response validation</div>
+            <div><strong>httpx</strong> — async OAuth2 token validation</div>
+            <div><strong>openpyxl</strong> — Excel file parsing (mapping preview)</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">☁️ Infrastructure</div>
+          <div style="font-size:12.5px;color:var(--slate7);display:flex;flex-direction:column;gap:7px;">
+            <div><strong>Cloud Run</strong> — serverless container, scale-to-zero</div>
+            <div><strong>Google BigQuery</strong> — petabyte-scale OLAP data warehouse</div>
+            <div><strong>Vertex AI API</strong> — managed Gemini endpoints</div>
+            <div><strong>Google OAuth2</strong> — user identity + BQ credential scoping</div>
+            <div><strong>Docker</strong> — single multi-stage image (React build → Python)</div>
+            <div><strong>Cloud Run CORS</strong> — restricted to known origins</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SLIDE 8 — APIS & SERVICES
+═══════════════════════════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-header">
+    <div class="tag">07 · APIs &amp; Services</div>
+    <div class="slide-title">Backend API surface &amp; external service integrations</div>
+  </div>
+  <div class="divider"></div>
+  <div class="body">
+    <div class="grid2">
+      <div>
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-title">Internal REST API (FastAPI)</div>
+          <div style="font-size:11.5px;font-family:monospace;display:flex;flex-direction:column;gap:5px;color:var(--slate7);">
+            <div style="display:flex;gap:8px;"><span class="badge badge-blue" style="font-size:10px;min-width:36px;justify-content:center;">POST</span><span><strong>/api/query</strong> — NL → SQL → chart widget</span></div>
+            <div style="display:flex;gap:8px;"><span class="badge badge-blue" style="font-size:10px;min-width:36px;justify-content:center;">POST</span><span><strong>/api/query/sql</strong> — direct SQL execution</span></div>
+            <div style="display:flex;gap:8px;"><span class="badge badge-blue" style="font-size:10px;min-width:36px;justify-content:center;">POST</span><span><strong>/api/chat</strong> — AI agent (sync)</span></div>
+            <div style="display:flex;gap:8px;"><span class="badge badge-blue" style="font-size:10px;min-width:36px;justify-content:center;">POST</span><span><strong>/api/chat/stream</strong> — AI agent (SSE)</span></div>
+            <div style="display:flex;gap:8px;"><span class="badge badge-green" style="font-size:10px;min-width:36px;justify-content:center;">GET</span><span><strong>/api/scorecard/fte</strong> — FTE scorecard bundle</span></div>
+            <div style="display:flex;gap:8px;"><span class="badge badge-green" style="font-size:10px;min-width:36px;justify-content:center;">GET</span><span><strong>/api/scorecard/vendor</strong> — Vendor scorecard bundle</span></div>
+            <div style="display:flex;gap:8px;"><span class="badge badge-green" style="font-size:10px;min-width:36px;justify-content:center;">GET</span><span><strong>/api/scorecard/hierarchy</strong> — Hierarchy scorecard</span></div>
+            <div style="display:flex;gap:8px;"><span class="badge badge-blue" style="font-size:10px;min-width:36px;justify-content:center;">POST</span><span><strong>/api/pdf</strong> — generate PDF report</span></div>
+            <div style="display:flex;gap:8px;"><span class="badge badge-slate" style="font-size:10px;min-width:36px;justify-content:center;">CRUD</span><span><strong>/api/glossary</strong> — term management</span></div>
+            <div style="display:flex;gap:8px;"><span class="badge badge-slate" style="font-size:10px;min-width:36px;justify-content:center;">CRUD</span><span><strong>/api/favorites</strong> — saved widgets</span></div>
+            <div style="display:flex;gap:8px;"><span class="badge badge-green" style="font-size:10px;min-width:36px;justify-content:center;">GET</span><span><strong>/api/health</strong> — AI + BQ readiness check</span></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-title">External GCP Services</div>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <div class="sec-item" style="border-bottom:1px solid var(--slate1);padding-bottom:10px;">
+              <div class="sec-icon">🤖</div>
+              <div><div class="sec-title">Vertex AI — Gemini 2.5 Flash</div><div class="sec-desc">Function calling (tool use), multi-turn chat sessions, streaming generation. Model configured via VERTEX_AI_PROJECT + GEMINI_MODEL env vars.</div></div>
+            </div>
+            <div class="sec-item" style="border-bottom:1px solid var(--slate1);padding-bottom:10px;">
+              <div class="sec-icon">📊</div>
+              <div><div class="sec-title">BigQuery API</div><div class="sec-desc">Ad-hoc query execution, schema introspection. Billing project configurable separately from data project. Per-user credentials forwarded from Bearer token.</div></div>
+            </div>
+            <div class="sec-item" style="padding-bottom:0;">
+              <div class="sec-icon">🔑</div>
+              <div><div class="sec-title">Google OAuth2 Userinfo API</div><div class="sec-desc">GET https://www.googleapis.com/oauth2/v2/userinfo — resolves Bearer token to user ID + email for per-user glossary &amp; favorites scoping.</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Optional / Future Integrations</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <span class="badge badge-amber">Apache Airflow REST API</span>
+            <span class="badge badge-slate">Cloud SQL (replace SQLite)</span>
+            <span class="badge badge-sky">BigQuery BI Engine</span>
+            <span class="badge badge-green">Cloud Scheduler (reports)</span>
+            <span class="badge badge-violet">Secret Manager (secrets)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SLIDE 9 — SECURITY & AUTHORIZATION
+═══════════════════════════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-header">
+    <div class="tag">08 · Security &amp; Authorization</div>
+    <div class="slide-title">Defense-in-depth: user-scoped credentials at every layer</div>
+    <div class="slide-sub">No user ever gets broader BigQuery access than their Google identity already has.</div>
+  </div>
+  <div class="divider"></div>
+  <div class="body">
+    <div class="grid2" style="margin-bottom:14px;">
+      <div class="card">
+        <div class="card-title">Authentication Flow</div>
+        <div class="step-col">
+          <div class="step" style="background:var(--slate0);">
+            <div class="step-num" style="background:#2563EB;">1</div>
+            <div class="step-body"><strong>Browser sends Bearer token</strong><span>Google OAuth2 access token in Authorization header on every API request</span></div>
+          </div>
+          <div class="step" style="background:var(--slate0);">
+            <div class="step-num" style="background:#2563EB;">2</div>
+            <div class="step-body"><strong>Backend validates token</strong><span>Calls Google's /userinfo endpoint — extracts user ID + email. Falls back to anonymous if token absent (dev mode).</span></div>
+          </div>
+          <div class="step" style="background:var(--slate0);">
+            <div class="step-num" style="background:#2563EB;">3</div>
+            <div class="step-body"><strong>Token forwarded to BigQuery</strong><span>Same Bearer token wraps into google.oauth2.Credentials — BQ runs queries under the user's own GCP IAM identity</span></div>
+          </div>
+          <div class="step" style="background:var(--slate0);">
+            <div class="step-num" style="background:#2563EB;">4</div>
+            <div class="step-body"><strong>User-scoped data isolation</strong><span>Glossary terms and favorites in SQLite are filtered by user ID — no cross-user data leakage</span></div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div class="card">
+          <div class="card-title">Security Controls</div>
+          <div class="sec-item"><div class="sec-icon">🛡️</div><div><div class="sec-title">CORS Whitelist</div><div class="sec-desc">Allowed origins explicitly listed: localhost:5173, localhost:3000, and CLOUD_RUN_URL env var. No wildcard (*) in production.</div></div></div>
+          <div class="sec-item"><div class="sec-icon">🔒</div><div><div class="sec-title">No Direct SQL from Users</div><div class="sec-desc">All SQL is AI-generated from natural language. Only admins can use the /api/query/sql endpoint. Users cannot construct arbitrary queries.</div></div></div>
+          <div class="sec-item"><div class="sec-icon">📝</div><div><div class="sec-title">BigQuery Job Audit Trail</div><div class="sec-desc">Every BQ query runs as a job attributed to the user's GCP identity — full audit log in Cloud Logging automatically.</div></div></div>
+          <div class="sec-item" style="border:none;"><div class="sec-icon">🔑</div><div><div class="sec-title">Credential Hierarchy</div><div class="sec-desc">Request token → env GOOGLE_OAUTH_TOKEN → Service Account JSON → Application Default Credentials (ADC). Vertex AI uses separate SA fallback chain.</div></div></div>
+        </div>
+        <div class="card" style="background:linear-gradient(135deg,#F0FDF4,#DCFCE7);border-color:#86EFAC;">
+          <div class="card-title" style="color:#15803D;">Compliance Notes</div>
+          <ul class="blist check" style="font-size:12px;">
+            <li>No PII stored in application database — only user IDs and term definitions</li>
+            <li>BigQuery row-level security can be applied at the GCP layer independently</li>
+            <li>All secrets (API keys, tokens) via .env / environment variables — never hardcoded</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SLIDE 10 — PERFORMANCE OPTIMIZATIONS
+═══════════════════════════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-header">
+    <div class="tag">09 · Performance</div>
+    <div class="slide-title">Six layers of optimization — from 8s to sub-2s for common queries</div>
+  </div>
+  <div class="divider"></div>
+  <div class="body">
+    <div class="grid2" style="gap:16px;margin-bottom:14px;">
+      <div class="card">
+        <div class="card-title">Latency Improvements</div>
+        <div class="perf-row" style="font-size:11px;font-weight:700;color:var(--slate5);">
+          <div class="perf-label">Optimization</div>
+          <div class="perf-before">Before</div>
+          <div class="perf-after">After</div>
+          <div style="width:140px;"></div>
+        </div>
+        <div class="perf-row">
+          <div class="perf-label">Contextual hint fetching (3 keywords)</div>
+          <div class="perf-before">~9s seq.</div>
+          <div class="perf-after">~3s par.</div>
+          <div class="perf-bar-wrap"><div class="perf-bar" style="width:67%"></div></div>
+        </div>
+        <div class="perf-row">
+          <div class="perf-label">Repeated hint queries (same keyword)</div>
+          <div class="perf-before">~3s</div>
+          <div class="perf-after">0ms</div>
+          <div class="perf-bar-wrap"><div class="perf-bar" style="width:100%"></div></div>
+        </div>
+        <div class="perf-row">
+          <div class="perf-label">Widget BQ query (double execution)</div>
+          <div class="perf-before">2× BQ</div>
+          <div class="perf-after">1× BQ</div>
+          <div class="perf-bar-wrap"><div class="perf-bar" style="width:50%"></div></div>
+        </div>
+        <div class="perf-row">
+          <div class="perf-label">Agent max tool rounds</div>
+          <div class="perf-before">10 rnd</div>
+          <div class="perf-after">4 rnd</div>
+          <div class="perf-bar-wrap"><div class="perf-bar" style="width:60%"></div></div>
+        </div>
+        <div class="perf-row">
+          <div class="perf-label">Conversational questions (no BQ needed)</div>
+          <div class="perf-before">~5s</div>
+          <div class="perf-after">~1s</div>
+          <div class="perf-bar-wrap"><div class="perf-bar" style="width:80%"></div></div>
+        </div>
+        <div class="perf-row">
+          <div class="perf-label">Scorecard page load (repeat)</div>
+          <div class="perf-before">~8s</div>
+          <div class="perf-after">&lt;1s</div>
+          <div class="perf-bar-wrap"><div class="perf-bar" style="width:88%"></div></div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div class="card">
+          <div class="card-title">Caching Architecture</div>
+          <div style="display:flex;flex-direction:column;gap:8px;font-size:12px;color:var(--slate7);">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--slate0);border-radius:6px;border:1px solid var(--slate1);">
+              <div><strong>Schema cache</strong> — BQ column definitions</div><span class="badge badge-blue">∞ (process lifetime)</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--slate0);border-radius:6px;border:1px solid var(--slate1);">
+              <div><strong>Hint cache</strong> — SELECT DISTINCT values per column</div><span class="badge badge-green">10 minutes</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--slate0);border-radius:6px;border:1px solid var(--slate1);">
+              <div><strong>BQ result cache</strong> — agent tool call results</div><span class="badge badge-violet">60 seconds</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--slate0);border-radius:6px;border:1px solid var(--slate1);">
+              <div><strong>Scorecard cache</strong> — pre-built dashboard queries</div><span class="badge badge-amber">5 minutes</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--slate0);border-radius:6px;border:1px solid var(--slate1);">
+              <div><strong>Agent model</strong> — GenerativeModel instance</div><span class="badge badge-sky">∞ (process lifetime)</span>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Concurrency Design</div>
+          <ul class="blist">
+            <li>asyncio event loop — all I/O non-blocking</li>
+            <li>BQ tool calls within a round run in parallel (asyncio.gather)</li>
+            <li>Hint queries fire concurrently (ThreadPoolExecutor)</li>
+            <li>Scorecard endpoints use asyncio.gather for 6–9 parallel BQ calls</li>
+            <li>Schema pre-warmed in background thread at startup</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SLIDE 11 — COST OF DEPLOYMENT
+═══════════════════════════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-header">
+    <div class="tag">10 · Cost</div>
+    <div class="slide-title">Estimated running cost — ~$20–60 / month for a small active team</div>
+    <div class="slide-sub">Cloud Run scales to zero. You pay only for what you use.</div>
+  </div>
+  <div class="divider"></div>
+  <div class="body">
+    <div class="grid2" style="gap:16px;">
+      <div>
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-title">Monthly Cost Breakdown (est. 10 active users)</div>
+          <table class="cost-table">
+            <thead>
+              <tr><th>Service</th><th>Usage Assumption</th><th>Est. Cost</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Cloud Run</strong></td>
+                <td>2 vCPU / 2 GB · 8 hrs/day · 22 days</td>
+                <td>$8–15</td>
+              </tr>
+              <tr>
+                <td><strong>Gemini 2.5 Flash</strong></td>
+                <td>~500 agent calls/mo · ~3K tokens avg</td>
+                <td>$0.50–2</td>
+              </tr>
+              <tr>
+                <td><strong>BigQuery (on-demand)</strong></td>
+                <td>~2,000 queries · 500 MB avg scan</td>
+                <td>$5–12</td>
+              </tr>
+              <tr>
+                <td><strong>Vertex AI API</strong></td>
+                <td>Included in GCP project quota</td>
+                <td>$0</td>
+              </tr>
+              <tr>
+                <td><strong>Cloud Logging</strong></td>
+                <td>First 50 GB/month free</td>
+                <td>$0</td>
+              </tr>
+              <tr class="cost-total">
+                <td><strong>Total</strong></td>
+                <td>10 users, moderate daily usage</td>
+                <td><strong>~$14–29/mo</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card" style="background:linear-gradient(135deg,#F0F9FF,#E0F2FE);border-color:#7DD3FC;">
+          <div class="card-title" style="color:#0369A1;">Cost Scale Notes</div>
+          <ul class="blist" style="font-size:12px;">
+            <li>Gemini 2.5 Flash is ~10× cheaper than 2.5 Pro — significant savings at scale</li>
+            <li>BigQuery caching (intent routing) reduces BQ scans ~30% by skipping non-data questions</li>
+            <li>Scale-to-zero on Cloud Run means $0 cost outside business hours</li>
+            <li>BI Engine reservation (~$300/mo) would eliminate BQ per-query cost for frequent tables</li>
+          </ul>
+        </div>
+      </div>
+      <div>
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-title">Cost vs. Alternatives</div>
+          <table class="cmp-table">
+            <thead>
+              <tr style="background:var(--slate1);">
+                <th style="text-align:left;">Tool</th>
+                <th>Self-Service</th>
+                <th>AI Chat</th>
+                <th>Live BQ</th>
+                <th>Monthly Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="cmp-highlight">
+                <td><strong>This Dashboard</strong></td>
+                <td class="yes" style="text-align:center;">✓</td>
+                <td class="yes" style="text-align:center;">✓</td>
+                <td class="yes" style="text-align:center;">✓</td>
+                <td><strong>~$20–60</strong></td>
+              </tr>
+              <tr>
+                <td>Tableau (10 users)</td>
+                <td class="yes" style="text-align:center;">✓</td>
+                <td class="no" style="text-align:center;">✗</td>
+                <td class="partial" style="text-align:center;">Connector</td>
+                <td>$700+</td>
+              </tr>
+              <tr>
+                <td>PowerBI Pro (10 users)</td>
+                <td class="yes" style="text-align:center;">✓</td>
+                <td class="no" style="text-align:center;">✗</td>
+                <td class="partial" style="text-align:center;">Connector</td>
+                <td>$100+</td>
+              </tr>
+              <tr>
+                <td>Looker (GCP native)</td>
+                <td class="yes" style="text-align:center;">✓</td>
+                <td class="partial" style="text-align:center;">Limited</td>
+                <td class="yes" style="text-align:center;">✓</td>
+                <td>$5,000+/yr</td>
+              </tr>
+              <tr>
+                <td>Custom BI eng. team</td>
+                <td class="no" style="text-align:center;">✗</td>
+                <td class="no" style="text-align:center;">✗</td>
+                <td class="yes" style="text-align:center;">✓</td>
+                <td>$15,000+/mo</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-title">Gemini 2.5 Flash Pricing (Vertex AI)</div>
+          <div style="font-size:12px;color:var(--slate7);display:flex;flex-direction:column;gap:6px;">
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--slate1);"><span>Input tokens</span><strong>$0.075 / 1M tokens</strong></div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--slate1);"><span>Output tokens</span><strong>$0.30 / 1M tokens</strong></div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--slate1);"><span>Typical agent call (~3K tokens)</span><strong>~$0.001 / call</strong></div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;"><span>500 agent calls / month</span><strong>~$0.50</strong></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SLIDE 12 — DEPLOYMENT
+═══════════════════════════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-header">
+    <div class="tag">11 · Deployment</div>
+    <div class="slide-title">One Docker image, one Cloud Run service, zero managed infrastructure</div>
+  </div>
+  <div class="divider"></div>
+  <div class="body">
+    <div class="grid2" style="gap:16px;margin-bottom:14px;">
+      <div>
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-title">Docker Image (Multi-stage)</div>
+          <div style="background:var(--slate9);border-radius:8px;padding:14px 16px;font-family:monospace;font-size:11px;line-height:1.7;color:#94A3B8;">
+            <span style="color:#60A5FA;"># Stage 1: Build React SPA</span><br>
+            FROM node:20 AS ui-build<br>
+            WORKDIR /app/frontend<br>
+            RUN npm ci &amp;&amp; npm run build<br><br>
+            <span style="color:#60A5FA;"># Stage 2: Python backend</span><br>
+            FROM python:3.12-slim<br>
+            COPY requirements.txt .<br>
+            RUN pip install -r requirements.txt<br>
+            <span style="color:#86EFAC;">COPY --from=ui-build /app/frontend/dist ./static</span><br>
+            CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Configuration (Environment Variables)</div>
+          <div style="font-size:11.5px;font-family:monospace;display:flex;flex-direction:column;gap:4px;color:var(--slate7);">
+            <div><span style="color:var(--blue);">VERTEX_AI_PROJECT</span>=my-gcp-project</div>
+            <div><span style="color:var(--blue);">VERTEX_AI_LOCATION</span>=us-central1</div>
+            <div><span style="color:var(--blue);">GEMINI_MODEL</span>=gemini-2.5-flash</div>
+            <div><span style="color:var(--blue);">BIGQUERY_PROJECT_ID</span>=my-data-project</div>
+            <div><span style="color:var(--blue);">BIGQUERY_TABLES</span>=proj.dataset.table1,...</div>
+            <div><span style="color:var(--blue);">GOOGLE_OAUTH_TOKEN</span>=ya29.xxx (dev fallback)</div>
+            <div><span style="color:var(--blue);">CLOUD_RUN_URL</span>=https://app-xxx.run.app</div>
+            <div><span style="color:var(--blue);">GOOGLE_APPLICATION_CREDENTIALS</span>=/sa.json</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-title">Cloud Run Configuration</div>
+          <div style="display:flex;flex-direction:column;gap:8px;font-size:12.5px;color:var(--slate7);">
+            <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--slate1);"><span>Container port</span><strong>8080</strong></div>
+            <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--slate1);"><span>Min instances</span><strong>0 (scale-to-zero)</strong></div>
+            <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--slate1);"><span>Max instances</span><strong>3–5 (configurable)</strong></div>
+            <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--slate1);"><span>CPU</span><strong>2 vCPU (always-on for SSE)</strong></div>
+            <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--slate1);"><span>Memory</span><strong>2 GB</strong></div>
+            <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--slate1);"><span>Concurrency</span><strong>80 requests / instance</strong></div>
+            <div style="display:flex;justify-content:space-between;padding:7px 0;"><span>Request timeout</span><strong>300s (PDF + long agent)</strong></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">IAM Roles Required</div>
+          <div style="font-size:12px;color:var(--slate7);display:flex;flex-direction:column;gap:6px;">
+            <div style="display:flex;gap:8px;align-items:center;"><span class="badge badge-violet" style="font-size:10px;">Cloud Run SA</span><span>roles/bigquery.jobUser + roles/aiplatform.user</span></div>
+            <div style="display:flex;gap:8px;align-items:center;"><span class="badge badge-blue" style="font-size:10px;">End Users</span><span>roles/bigquery.dataViewer (on the data tables)</span></div>
+            <div style="display:flex;gap:8px;align-items:center;"><span class="badge badge-green" style="font-size:10px;">Vertex AI</span><span>roles/aiplatform.user on VERTEX_AI_PROJECT</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SLIDE 13 — ROADMAP
+═══════════════════════════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-header">
+    <div class="tag">12 · Roadmap</div>
+    <div class="slide-title">What's next — planned enhancements</div>
+  </div>
+  <div class="divider"></div>
+  <div class="body">
+    <div class="grid2" style="gap:16px;">
+      <div class="card">
+        <div class="card-title">Near-term (Next 90 Days)</div>
+        <div class="timeline">
+          <div class="tl-item">
+            <div class="tl-left"><div class="tl-dot" style="background:var(--blue);"></div><div class="tl-line"></div></div>
+            <div class="tl-content"><h4>BigQuery BI Engine</h4><p>Reserve in-memory capacity → query latency drops from 2–4s to 50–200ms for the main dataset</p></div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-left"><div class="tl-dot" style="background:var(--blue);"></div><div class="tl-line"></div></div>
+            <div class="tl-content"><h4>Materialized Views for Scorecards</h4><p>Pre-aggregate heavy GROUP BY queries so scorecard data loads in milliseconds, not seconds</p></div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-left"><div class="tl-dot" style="background:var(--blue);"></div><div class="tl-line"></div></div>
+            <div class="tl-content"><h4>Airflow DAG Integration</h4><p>Backend proxy to Airflow REST API — DAG graph, run history, and SQL viewer in the dashboard</p></div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-left"><div class="tl-dot" style="background:var(--blue);"></div><div class="tl-line"></div></div>
+            <div class="tl-content"><h4>Gemini Response Streaming (text tokens)</h4><p>Stream partial narrative text to the UI while BQ queries run — perceived latency near zero</p></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Medium-term (90–180 Days)</div>
+        <div class="timeline">
+          <div class="tl-item">
+            <div class="tl-left"><div class="tl-dot" style="background:var(--violet);"></div><div class="tl-line"></div></div>
+            <div class="tl-content"><h4>Role-Based Access Control</h4><p>Manager / analyst / admin roles controlling which scorecard tabs and data subsets are visible</p></div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-left"><div class="tl-dot" style="background:var(--violet);"></div><div class="tl-line"></div></div>
+            <div class="tl-content"><h4>Scheduled Report Delivery</h4><p>Cloud Scheduler + SendGrid — weekly PDF scorecards auto-emailed to stakeholders</p></div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-left"><div class="tl-dot" style="background:var(--violet);"></div><div class="tl-line"></div></div>
+            <div class="tl-content"><h4>Multi-Table Query Support</h4><p>JOIN across workforce + financial + intake tables — agent selects which tables to query based on question context</p></div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-left"><div class="tl-dot" style="background:var(--violet);"></div><div class="tl-line"></div></div>
+            <div class="tl-content"><h4>Cloud SQL (PostgreSQL)</h4><p>Replace SQLite with managed Cloud SQL for multi-instance deployments and shared glossary</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:14px;background:linear-gradient(135deg,#EFF6FF,#F5F3FF);border-color:#C4B5FD;">
+      <div style="display:flex;align-items:center;gap:16px;">
+        <div style="font-size:32px;">🚀</div>
+        <div style="flex:1;">
+          <div style="font-size:13px;font-weight:700;color:var(--slate9);margin-bottom:4px;">Strategic Vision</div>
+          <div style="font-size:12px;color:var(--slate5);line-height:1.5;">Evolve from a single-team dashboard into an enterprise-wide AI analytics platform — any Google-authenticated user can ask questions about their project's workforce data in plain English, with results appearing in under 2 seconds, governed by their existing BigQuery IAM roles.</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">
+          <span class="badge badge-blue">Self-service analytics</span>
+          <span class="badge badge-green">Zero SQL required</span>
+          <span class="badge badge-violet">IAM-governed access</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SLIDE 14 — CLOSING
+═══════════════════════════════════════════════════════════════════ -->
+<div class="slide" style="background:linear-gradient(145deg,#EFF6FF 0%,#F5F3FF 50%,#F0FDF4 100%);display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:60px 80px;">
+  <div style="font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--blue);margin-bottom:16px;">Thank You</div>
+  <h2 style="font-size:38px;font-weight:800;color:var(--slate9);line-height:1.15;margin-bottom:12px;">Ask your data anything.<br><span style="color:var(--blue);">Get answers in seconds.</span></h2>
+  <p style="font-size:16px;color:var(--slate5);max-width:500px;line-height:1.6;margin-bottom:40px;">Gemini Workforce Dashboard puts the full power of BigQuery + Gemini in the hands of every manager — no SQL, no tickets, no waiting.</p>
+
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;max-width:700px;margin-bottom:40px;">
+    <div class="card stat"><div class="num" style="color:var(--blue);">~1s</div><div class="lbl">Fast path<br>response</div></div>
+    <div class="card stat"><div class="num" style="color:var(--green);">~3–6s</div><div class="lbl">Agent with<br>live BQ data</div></div>
+    <div class="card stat"><div class="num" style="color:var(--violet);">$20–60</div><div class="lbl">Est. monthly<br>cost (10 users)</div></div>
+    <div class="card stat"><div class="num" style="color:var(--teal);">0</div><div class="lbl">SQL needed<br>by end users</div></div>
+  </div>
+
+  <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;">
+    <span class="badge badge-blue" style="font-size:12px;padding:6px 14px;">React + TypeScript</span>
+    <span class="badge badge-violet" style="font-size:12px;padding:6px 14px;">FastAPI + Python</span>
+    <span class="badge badge-green" style="font-size:12px;padding:6px 14px;">Gemini 2.5 Flash</span>
+    <span class="badge badge-sky" style="font-size:12px;padding:6px 14px;">Google BigQuery</span>
+    <span class="badge badge-amber" style="font-size:12px;padding:6px 14px;">Cloud Run</span>
+  </div>
+</div>
+
+</div><!-- /deck -->
+
+<!-- Navigation -->
+<div class="nav">
+  <button id="prev" title="Previous (←)">&#8592;</button>
+  <div class="pip-row" id="pips"></div>
+  <div class="counter" id="counter">1 / 14</div>
+  <button id="next" title="Next (→)">&#8594;</button>
+</div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const pipsEl  = document.getElementById('pips');
+  const counter = document.getElementById('counter');
+  let cur = 0;
+
+  // Build pips
+  slides.forEach((_, i) => {
+    const p = document.createElement('div');
+    p.className = 'pip' + (i === 0 ? ' on' : '');
+    p.onclick = () => go(i);
+    pipsEl.appendChild(p);
+  });
+
+  function go(n) {
+    if (n < 0 || n >= slides.length) return;
+    slides[cur].classList.remove('active');
+    slides[cur].classList.add('exiting');
+    setTimeout(() => slides[cur].classList.remove('exiting'), 400);
+    cur = n;
+    slides[cur].classList.add('active');
+    document.querySelectorAll('.pip').forEach((p, i) => p.classList.toggle('on', i === cur));
+    counter.textContent = `${cur + 1} / ${slides.length}`;
+  }
+
+  document.getElementById('prev').onclick = () => go(cur - 1);
+  document.getElementById('next').onclick = () => go(cur + 1);
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') { e.preventDefault(); go(cur + 1); }
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp') { e.preventDefault(); go(cur - 1); }
+  });
+</script>
+</body>
+</html>
