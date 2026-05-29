@@ -24,12 +24,14 @@ const AuthContext = createContext<AuthContextValue>({
 // issued with the old (insufficient) scopes so users aren't silently broken.
 const SCOPE_VERSION = '2'
 
-function migrateStoredAuth() {
-  if (localStorage.getItem('oauth_scope_version') !== SCOPE_VERSION) {
-    localStorage.removeItem('google_oauth_token')
-    localStorage.removeItem('google_user')
-    localStorage.setItem('oauth_scope_version', SCOPE_VERSION)
-  }
+// Runs at MODULE load time (not at render time) so any stale token is cleared
+// before the axios interceptor in App.tsx reads localStorage for prefetch queries.
+// App.tsx imports AuthContext, so this module executes before App.tsx's own
+// module-level code (qc.prefetchQuery calls).
+if (localStorage.getItem('oauth_scope_version') !== SCOPE_VERSION) {
+  localStorage.removeItem('google_oauth_token')
+  localStorage.removeItem('google_user')
+  localStorage.setItem('oauth_scope_version', SCOPE_VERSION)
 }
 
 function loadStoredUser(): UserProfile | null {
@@ -42,9 +44,6 @@ function loadStoredUser(): UserProfile | null {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  // Run once on module load — clears stale tokens from old scope versions.
-  migrateStoredAuth()
-
   const [token, setTokenState] = useState<string>(() => localStorage.getItem('google_oauth_token') ?? '')
   const [user, setUserState] = useState<UserProfile | null>(loadStoredUser)
 

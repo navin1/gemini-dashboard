@@ -161,8 +161,8 @@ export function FTEHierarchyTab({ tabLabel, onRegisterAddWidget }: Props) {
 
   const kpi = data?.kpi?.[0] as KPIData | undefined
 
-  if (isLoading && !widgets.length) return <LoadingOverlay label="Loading FTE Hierarchy Scorecard…" />
-  if (isError) return (
+  if ((isLoading || isFetching) && !widgets.length) return <LoadingOverlay label="Loading FTE Hierarchy Scorecard…" />
+  if (isError && !isFetching) return (
     <div className="p-8 text-center">
       <p className="text-red-600 font-medium mb-3">Failed to load scorecard data</p>
       <button onClick={() => refetch()} className="text-sm text-brand-600 underline">Retry</button>

@@ -174,8 +174,8 @@ export function VendorSummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
     finally { setExporting(false) }
   }
 
-  if (isLoading && !widgets.length) return <LoadingOverlay label="Loading Vendor Summary…" />
-  if (isError) return (
+  if ((isLoading || isFetching) && !widgets.length) return <LoadingOverlay label="Loading Vendor Summary…" />
+  if (isError && !isFetching) return (
     <div className="p-8 text-center">
       <p className="text-red-600 font-medium mb-3">Failed to load vendor data</p>
       <button onClick={() => refetch()} className="text-sm text-brand-600 underline">Retry</button>
