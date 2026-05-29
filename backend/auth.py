@@ -75,15 +75,9 @@ def _get_gcloud_login_credentials():
         return None
 
     try:
-        data = json.loads(cred_file.read_text())
-        from google.oauth2.credentials import Credentials
-        return Credentials(
-            token=None,
-            refresh_token=data["refresh_token"],
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=data["client_id"],
-            client_secret=data["client_secret"],
-        )
+        import google.auth
+        creds, _ = google.auth.load_credentials_from_file(str(cred_file))
+        return creds
     except Exception:
         return None
 
