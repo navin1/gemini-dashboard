@@ -90,17 +90,60 @@ _PC_LABEL      = f"CASE WHEN {_PC_IS_CAPITAL} THEN 'Capital' ELSE 'Expense' END"
 
 
 def build_schema_context(token: str | None = None) -> str:
-    """Fetch live column schemas for all configured tables from BigQuery."""
+    """Fetch live column schemas and categorical sample values for all configured tables.
+
+    For every STRING column with ≤ 60 distinct values (i.e. a categorical column),
+    the context includes the actual values so the model knows valid filter literals
+    before writing SQL — eliminating the wrong-value problem at the source.
+    """
     client = _client(token)
     sections = []
     for ref in TABLE_REFS:
         try:
             tbl = client.get_table(ref)
+
+            # Collect STRING columns for sample-value enrichment.
+            str_cols = [
+                f.name for f in tbl.schema
+                if f.field_type in ("STRING", "BYTES") and f.mode != "REPEATED"
+            ]
+
+            # One UNNEST query fetches cardinality + distinct samples for all string
+            # columns in a single BQ pass.  Only categorical columns (≤ 60 distinct
+            # values) get their values included — high-cardinality columns (names,
+            # IDs, free-text) are omitted to keep the context compact.
+            sample_vals: dict[str, list[str]] = {}
+            if str_cols:
+                structs = ", ".join(
+                    f"STRUCT('{c}' AS c, CAST(`{c}` AS STRING) AS v)"
+                    for c in str_cols
+                )
+                sample_sql = (
+                    f"SELECT col, vals FROM ("
+                    f"SELECT t.c AS col, APPROX_COUNT_DISTINCT(t.v) AS cardinality,"
+                    f" STRING_AGG(DISTINCT t.v, '|||' ORDER BY t.v LIMIT 25) AS vals"
+                    f" FROM `{ref}`, UNNEST([{structs}]) AS t"
+                    f" WHERE t.v IS NOT NULL AND TRIM(t.v) NOT IN ('', '0')"
+                    f" GROUP BY t.c) WHERE cardinality <= 60"
+                )
+                try:
+                    rows = run_query(sample_sql, token)
+                    for row in rows:
+                        if row.get("vals"):
+                            sample_vals[row["col"]] = [
+                                v.strip() for v in str(row["vals"]).split("|||") if v.strip()
+                            ]
+                except Exception as exc:
+                    logger.warning(f"build_schema_context: sample-value fetch failed: {exc}")
+
             lines = []
             for field in tbl.schema:
-                desc = f"  -- {field.description}" if field.description else ""
+                desc = f" -- {field.description}" if field.description else ""
                 mode = " REPEATED" if field.mode == "REPEATED" else ""
-                lines.append(f"  {field.name} {field.field_type}{mode}{desc}")
+                vals = sample_vals.get(field.name, [])
+                val_hint = f"  -- values: {', '.join(repr(v) for v in vals)}" if vals else ""
+                lines.append(f"  {field.name} {field.field_type}{mode}{desc}{val_hint}")
+
             body = "\n".join(lines) if lines else "  (no columns retrieved)"
             sections.append(f"BigQuery table: `{ref}`\n{body}")
         except Exception as exc:

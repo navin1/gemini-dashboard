@@ -150,12 +150,17 @@ _schema_cache: str | None = None
 
 
 def _get_schema() -> str:
-    global _schema_cache
+    global _schema_cache, _AGENT_MODEL_INSTANCE
     if _schema_cache is None:
+        prev = _schema_cache
         try:
             _schema_cache = bigquery_client.build_schema_context()
         except Exception:
             _schema_cache = _FALLBACK_SCHEMA
+        # If the schema changed (e.g. first real fetch after fallback), force
+        # the cached agent model to rebuild so it gets the enriched schema.
+        if _schema_cache != prev:
+            _AGENT_MODEL_INSTANCE = None
     return _schema_cache
 
 
@@ -687,6 +692,12 @@ _FILTER_RE = re.compile(
     re.IGNORECASE,
 )
 
+_IN_FILTER_RE = re.compile(
+    # Matches: [alias.]ColumnName [NOT] IN ('val1', 'val2', ...)
+    r'\b(?:\w+\.)?([\w]+)\s+(?:NOT\s+)?IN\s*\(\s*(\'[^\']*\'(?:\s*,\s*\'[^\']*\')*)\s*\)',
+    re.IGNORECASE,
+)
+
 _SQL_KEYWORDS = frozenset({
     'AND', 'OR', 'NOT', 'NULL', 'TRUE', 'FALSE', 'IS', 'IN', 'LIKE',
     'BETWEEN', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'AS', 'ON',
@@ -696,7 +707,7 @@ _SQL_KEYWORDS = frozenset({
 
 
 def _extract_string_filters(sql: str) -> dict[str, list[str]]:
-    """Return {column: [values_used]} for string equality filters in the WHERE clause."""
+    """Return {column: [values_used]} for string equality and IN filters in the WHERE clause."""
     # Isolate just the WHERE clause body (stop at GROUP BY / ORDER BY / LIMIT)
     m = re.search(
         r'\bWHERE\b([\s\S]+?)(?:\bGROUP\s+BY\b|\bORDER\s+BY\b|\bLIMIT\b|\bHAVING\b|$)',
@@ -706,10 +717,20 @@ def _extract_string_filters(sql: str) -> dict[str, list[str]]:
         return {}
     where_body = m.group(1)
     result: dict[str, list[str]] = {}
+
+    # col = 'value' and col != 'value'
     for col, val in _FILTER_RE.findall(where_body):
         if col.upper() in _SQL_KEYWORDS:
             continue
         result.setdefault(col, []).append(val)
+
+    # col [NOT] IN ('val1', 'val2', ...)
+    for col, vals_str in _IN_FILTER_RE.findall(where_body):
+        if col.upper() in _SQL_KEYWORDS:
+            continue
+        vals = re.findall(r"'([^']*)'", vals_str)
+        result.setdefault(col, []).extend(vals)
+
     return result
 
 
