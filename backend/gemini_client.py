@@ -1,5 +1,7 @@
 import os
+import re
 import json
+import time
 import logging
 
 import google.auth
@@ -296,8 +298,7 @@ def _safe_parse_agent_response(raw: str) -> dict:
     except Exception:
         pass
     # Fallback 1: find the first {...} block anywhere in the text
-    import re as _re
-    m = _re.search(r'\{[\s\S]+\}', raw)
+    m = re.search(r'\{[\s\S]+\}', raw)
     if m:
         try:
             return json.loads(m.group())
@@ -348,7 +349,7 @@ def chat_turn(
     chat = _model.start_chat(history=vertex_history)
     prompt = f"{_build_chat_system()}{glossary_ctx}\n\nUser: {message}"
     response = chat.send_message(prompt)
-    return _parse_json(response.text)
+    return _safe_parse_agent_response(_response_text(response))
 
 
 def refine_widget(current_sql: str, nl_modification: str, glossary_terms: list[dict] | None = None) -> dict:
@@ -584,31 +585,92 @@ _KEYWORD_COLUMNS: list[tuple[list[str], str, int]] = [
     (["manager", "resource manager"],             "Resource_Manager",     50),
 ]
 
+# Cache for distinct column values — keyed by column name, 10-minute TTL.
+_HINTS_CACHE: dict[str, tuple[float, list[str]]] = {}
+_HINTS_TTL = 600
+
+_CONVERSATIONAL_RE = re.compile(
+    r'^(?:hi|hello|hey|thanks|thank you|ok|okay|sure|yes|no|got it|great|perfect|👍|🙏)[\s!.?]*$',
+    re.IGNORECASE,
+)
+
+# Phrases that signal a live BQ query is needed.
+# Conservative list — when uncertain we default to the agent (safe).
+_ANALYTICAL_RE = re.compile(
+    r'\b('
+    r'show\s+me|show\s+(?:a\s+|the\s+)?(?:chart|graph|table|data|list|breakdown|trend)'
+    r'|chart|graph|plot|visuali[sz]e'
+    r'|create\s+(?:a\s+)?(?:chart|graph|table|widget)'
+    r'|give\s+me\s+(?:a\s+|the\s+)?(?:chart|graph|table|list|breakdown|data)'
+    r'|list\s+(?:all\s+|the\s+)?(?:vendors?|projects?|resources?|contractors?|managers?)'
+    r'|how\s+many|how\s+much'
+    r'|what\s+(?:is\s+)?the\s+(?:total|sum|count|average|avg|breakdown)'
+    r'|total\s+(?:spend|cost|budget|ytd|amount|headcount|fte|ftp)'
+    r'|breakdown|distribution|split\s+by|group(?:ed)?\s+by'
+    r'|by\s+(?:vendor|project|month|resource|manager|team|class|type)'
+    r'|top\s+\d+|bottom\s+\d+|highest|lowest|most\s+expensive|ranking'
+    r'|trend|over\s+time|by\s+month|monthly|quarterly'
+    r'|compare|filter\s+(?:by|to|for)'
+    r')\b',
+    re.IGNORECASE,
+)
+
+
+def is_analytical(message: str) -> bool:
+    """Return True if the message likely requires a live BigQuery query (agent loop).
+
+    False → safe to use the fast chat_turn path (single Gemini call, no tools).
+    Defaults to True when uncertain — the agent is always correct, just slower.
+    """
+    return bool(_ANALYTICAL_RE.search(message))
+
+
+def _fetch_one_hint(column: str, limit: int, table_ref: str, token: str | None) -> tuple[str, list[str]]:
+    """Fetch distinct values for one column, reading from cache when fresh."""
+    now = time.monotonic()
+    cached = _HINTS_CACHE.get(column)
+    if cached and now - cached[0] < _HINTS_TTL:
+        logger.debug(f"Hint cache hit for {column}")
+        return column, cached[1]
+    sql = f"SELECT DISTINCT {column} FROM `{table_ref}` WHERE {column} IS NOT NULL ORDER BY {column} LIMIT {limit}"
+    rows = bigquery_client.run_query(sql, token)
+    values = [str(r.get(column, "")) for r in rows if r.get(column)]
+    _HINTS_CACHE[column] = (now, values)
+    return column, values
+
 
 def _build_contextual_hints(message: str, token: str | None) -> str:
-    """Pre-fetch distinct values for columns whose keywords appear in the user message."""
-    msg_lower = message.lower()
-    hints: list[str] = []
+    """Pre-fetch distinct values for columns whose keywords appear in the user message.
 
-    # Use the first configured table for distinct-value queries
+    Uses a per-column TTL cache and fires all matched columns in parallel so the
+    total wait is one BQ round-trip (not N sequential ones).
+    """
+    if _CONVERSATIONAL_RE.match(message.strip()):
+        return ""
+
+    msg_lower = message.lower()
     table_ref = bigquery_client.TABLE_REFS[0] if bigquery_client.TABLE_REFS else ""
     if not table_ref:
         return ""
 
-    for keywords, column, limit in _KEYWORD_COLUMNS:
-        if any(kw in msg_lower for kw in keywords):
-            try:
-                sql = f"SELECT DISTINCT {column} FROM `{table_ref}` WHERE {column} IS NOT NULL ORDER BY {column} LIMIT {limit}"
-                rows = bigquery_client.run_query(sql, token)
-                values = [str(r.get(column, "")) for r in rows if r.get(column)]
-                if values:
-                    hints.append(f"  {column}: {', '.join(values)}")
-                    logger.debug(f"Contextual hint for {column}: {len(values)} values")
-            except Exception as exc:
-                logger.debug(f"Contextual hint fetch failed for {column}: {exc}")
+    matched = [
+        (col, lim)
+        for keywords, col, lim in _KEYWORD_COLUMNS
+        if any(kw in msg_lower for kw in keywords)
+    ]
+    if not matched:
+        return ""
 
+    with ThreadPoolExecutor(max_workers=len(matched)) as pool:
+        pairs = list(pool.map(
+            lambda x: _fetch_one_hint(x[0], x[1], table_ref, token),
+            matched,
+        ))
+
+    hints = [f"  {col}: {', '.join(vals)}" for col, vals in pairs if vals]
     if not hints:
         return ""
+    logger.debug(f"Contextual hints built for {[col for col, _ in pairs if _]}")
     return "\n\nContextual values (exact strings to use in WHERE clauses):\n" + "\n".join(hints)
 
 
@@ -621,17 +683,45 @@ def _build_agent_model():
     )
 
 
+_AGENT_MODEL_INSTANCE: GenerativeModel | None = None
+
+
+def _get_agent_model() -> GenerativeModel:
+    """Return the cached agent model, building it once after schema is ready."""
+    global _AGENT_MODEL_INSTANCE
+    if _AGENT_MODEL_INSTANCE is None:
+        _AGENT_MODEL_INSTANCE = _build_agent_model()
+    return _AGENT_MODEL_INSTANCE
+
+
+# Two-level BQ cache keyed by SQL:
+#   _BQ_RESULT_CACHE  — truncated (≤50 rows) payload sent back to the model
+#   _BQ_FULL_CACHE    — complete result list reused by the route to populate widget["data"]
+# Both use a 60-second TTL so identical SQL within one conversation never hits BQ twice.
+_BQ_RESULT_CACHE: dict[str, tuple[float, dict]] = {}
+_BQ_FULL_CACHE: dict[str, tuple[float, list]] = {}
+_BQ_RESULT_TTL = 60
+
+
 def _execute_bq_call(fc, token: str | None) -> Part:
     """Run one BQ function call and return the function-response Part."""
     sql = fc.args.get("sql", "")
+
+    now = time.monotonic()
+    cached = _BQ_RESULT_CACHE.get(sql)
+    if cached and now - cached[0] < _BQ_RESULT_TTL:
+        logger.debug(f"Agent BQ cache hit: {sql[:60]!r}")
+        return Part.from_function_response(name=fc.name, response=cached[1])
+
     logger.info(f"Agent tool call: sql={sql[:120]!r}…")
     try:
         results = bigquery_client.run_query(sql, token)
         total = len(results)
+        _BQ_FULL_CACHE[sql] = (now, results)  # keep full result for route reuse
         resp_data: dict = {
             "status": "success",
             "row_count": total,
-            "data": results[:50],
+            "data": results[:50],  # model context capped at 50 rows
         }
         if total > 50:
             resp_data["truncated"] = True
@@ -645,6 +735,8 @@ def _execute_bq_call(fc, token: str | None) -> Part:
     except Exception as exc:
         resp_data = {"status": "error", "error": str(exc)}
         logger.warning(f"Agent tool error: {exc}")
+
+    _BQ_RESULT_CACHE[sql] = (now, resp_data)
     return Part.from_function_response(name=fc.name, response=resp_data)
 
 
@@ -686,7 +778,7 @@ def agent_chat(
     history: list[dict],
     glossary_terms: list[dict] | None = None,
     token: str | None = None,
-    max_tool_calls: int = 10,
+    max_tool_calls: int = 4,
 ) -> dict:
     _require_model()
 
@@ -694,7 +786,7 @@ def agent_chat(
 
     contextual_hints = _build_contextual_hints(message, token)
 
-    agent_model = _build_agent_model()
+    agent_model = _get_agent_model()
 
     vertex_history = [
         Content(
@@ -714,7 +806,7 @@ async def agent_chat_stream(
     history: list[dict],
     glossary_terms: list[dict] | None = None,
     token: str | None = None,
-    max_tool_calls: int = 10,
+    max_tool_calls: int = 4,
 ):
     """Async generator that yields SSE-ready dicts during the agent loop.
 
@@ -734,7 +826,6 @@ async def agent_chat_stream(
         None, _build_contextual_hints, message, token
     )
 
-    agent_model = _build_agent_model()
     vertex_history = [
         Content(
             role="user" if msg["role"] == "user" else "model",
@@ -743,6 +834,7 @@ async def agent_chat_stream(
         for msg in history
     ]
 
+    agent_model = _get_agent_model()
     chat = agent_model.start_chat(history=vertex_history)
     user_prompt = f"{glossary_ctx}{contextual_hints}\n\nUser: {message}"
 
