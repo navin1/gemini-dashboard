@@ -26,10 +26,10 @@ qc.prefetchQuery({ queryKey: ['scorecard', 'hierarchy'], queryFn: fetchHierarchy
 
 // ── Fixed tabs (always present, not closeable) ────────────────────────────────
 const FIXED_TABS = [
-  { id: 'fte',       label: 'FTE Hierarchy',     icon: LayoutDashboard, badge: 'Scorecard' },
-  { id: 'vendor',    label: 'Vendor Summary',     icon: Users,           badge: 'Scorecard' },
-  { id: 'hierarchy', label: 'Hierarchy Summary',  icon: GitBranch,       badge: 'Scorecard' },
   { id: 'ai',        label: 'My Dashboard',       icon: Sparkles,        badge: 'Dynamic'   },
+  { id: 'vendor',    label: 'Vendor Summary',     icon: Users,           badge: 'Scorecard' },
+  { id: 'fte',       label: 'FTE Hierarchy',      icon: LayoutDashboard, badge: 'Scorecard' },
+  { id: 'hierarchy', label: 'Hierarchy Summary',  icon: GitBranch,       badge: 'Scorecard' },
   { id: 'favorites', label: 'Favorites',          icon: Star,            badge: 'Saved'     },
   { id: 'glossary',  label: 'Glossary',           icon: BookOpen,        badge: 'Reference' },
 ] as const
