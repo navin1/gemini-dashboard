@@ -77,6 +77,19 @@ async def run_nl_query(
     except Exception as e:
         bq_error = str(e)
 
+    # If the query ran but returned 0 rows, attempt an automatic filter-value fix.
+    # fix_widget_sql detects bad string literals in WHERE clauses, fetches the real
+    # distinct values, and asks Gemini to rewrite the SQL.
+    if not bq_error and not data:
+        fixed = gemini_client.fix_widget_sql(widget_def, token)
+        if fixed and fixed.get("sql"):
+            try:
+                data = bigquery_client.run_query(fixed["sql"], token)
+                if data:
+                    widget_def = fixed  # adopt the corrected widget definition
+            except Exception:
+                pass  # keep original widget_def and empty data
+
     return QueryResponse(
         sql=widget_def.get("sql", ""),
         chart_type=widget_def.get("chart_type", "table"),
@@ -121,6 +134,16 @@ async def refine_query(
         data = bigquery_client.run_query(widget_def["sql"], token)
     except Exception as e:
         bq_error = str(e)
+
+    if not bq_error and not data:
+        fixed = gemini_client.fix_widget_sql(widget_def, token)
+        if fixed and fixed.get("sql"):
+            try:
+                data = bigquery_client.run_query(fixed["sql"], token)
+                if data:
+                    widget_def = fixed
+            except Exception:
+                pass
 
     return QueryResponse(
         sql=widget_def.get("sql", ""),

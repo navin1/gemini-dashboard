@@ -674,6 +674,138 @@ def _build_contextual_hints(message: str, token: str | None) -> str:
     return "\n\nContextual values (exact strings to use in WHERE clauses):\n" + "\n".join(hints)
 
 
+# ── WHERE-clause filter value correction ──────────────────────────────────────
+# When a query returns 0 rows because the model used a non-existent string
+# literal in a WHERE clause (wrong case, wrong value, abbreviation vs full name),
+# we detect the bad values, fetch the real ones, and feed them back to the agent
+# so it self-corrects on the next tool call.
+
+_FILTER_RE = re.compile(
+    # Matches: [alias.]ColumnName = 'value'  or  != 'value'
+    # Does NOT match >, >=, <, <=, LIKE, IN, IS
+    r'\b(?:\w+\.)?([\w]+)\s*(?:=|!=)\s*\'([^\']+)\'',
+    re.IGNORECASE,
+)
+
+_SQL_KEYWORDS = frozenset({
+    'AND', 'OR', 'NOT', 'NULL', 'TRUE', 'FALSE', 'IS', 'IN', 'LIKE',
+    'BETWEEN', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'AS', 'ON',
+    'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'FULL', 'CROSS',
+    'SELECT', 'FROM', 'WHERE', 'GROUP', 'ORDER', 'BY', 'HAVING', 'LIMIT',
+})
+
+
+def _extract_string_filters(sql: str) -> dict[str, list[str]]:
+    """Return {column: [values_used]} for string equality filters in the WHERE clause."""
+    # Isolate just the WHERE clause body (stop at GROUP BY / ORDER BY / LIMIT)
+    m = re.search(
+        r'\bWHERE\b([\s\S]+?)(?:\bGROUP\s+BY\b|\bORDER\s+BY\b|\bLIMIT\b|\bHAVING\b|$)',
+        sql, re.IGNORECASE,
+    )
+    if not m:
+        return {}
+    where_body = m.group(1)
+    result: dict[str, list[str]] = {}
+    for col, val in _FILTER_RE.findall(where_body):
+        if col.upper() in _SQL_KEYWORDS:
+            continue
+        result.setdefault(col, []).append(val)
+    return result
+
+
+def _build_filter_correction_note(sql: str, token: str | None) -> str:
+    """
+    If the SQL has string equality WHERE filters, check whether the values used
+    actually exist in the table.  For any value that does NOT exist, fetch the
+    real distinct values and return a corrective note the agent can act on.
+
+    Returns an empty string when everything looks fine.
+    """
+    filters = _extract_string_filters(sql)
+    if not filters:
+        return ""
+
+    table_ref = bigquery_client.TABLE_REFS[0] if bigquery_client.TABLE_REFS else ""
+    if not table_ref:
+        return ""
+
+    def _fetch_col_vals(col: str) -> tuple[str, list[str]]:
+        # Prefer the hint cache to avoid extra BQ calls
+        cached = _HINTS_CACHE.get(col)
+        if cached and time.monotonic() - cached[0] < _HINTS_TTL:
+            return col, cached[1]
+        try:
+            rows = bigquery_client.run_query(
+                f"SELECT DISTINCT `{col}` FROM `{table_ref}` "
+                f"WHERE `{col}` IS NOT NULL ORDER BY `{col}` LIMIT 40",
+                token,
+            )
+            vals = [str(r[col]) for r in rows if r.get(col) is not None]
+            _HINTS_CACHE[col] = (time.monotonic(), vals)
+            return col, vals
+        except Exception:
+            return col, []  # column may not exist or may be in a subquery alias
+
+    with ThreadPoolExecutor(max_workers=min(len(filters), 4)) as pool:
+        actual_by_col = dict(pool.map(_fetch_col_vals, filters.keys()))
+
+    corrections: list[str] = []
+    for col, used_vals in filters.items():
+        actual = actual_by_col.get(col, [])
+        if not actual:
+            continue
+        actual_lower = {v.lower() for v in actual}
+        wrong = [v for v in used_vals if v.lower() not in actual_lower]
+        if wrong:
+            sample = ", ".join(f"'{v}'" for v in actual[:20])
+            corrections.append(
+                f"  • {col}: used {[repr(w) for w in wrong]} — "
+                f"actual values are: {sample}"
+            )
+
+    if not corrections:
+        return ""
+
+    return (
+        "⚠️ Query returned 0 rows because of incorrect WHERE filter values.\n"
+        + "\n".join(corrections)
+        + "\nRetry using the exact values listed above."
+    )
+
+
+def fix_widget_sql(widget_def: dict, token: str | None = None) -> dict | None:
+    """
+    Run the widget's SQL.  If it returns 0 rows because of bad string filter
+    values, ask Gemini to rewrite the SQL with the correct values and return
+    a new widget_def.  Returns None if no fix was needed or possible.
+
+    Used by the /api/query route (non-agent path) which has no feedback loop.
+    """
+    sql = widget_def.get("sql", "")
+    if not sql:
+        return None
+    try:
+        results = bigquery_client.run_query(sql, token)
+    except Exception:
+        return None  # BQ error — not a filter-value issue
+    if results:
+        return None  # query already works fine
+
+    note = _build_filter_correction_note(sql, token)
+    if not note:
+        return None  # 0 rows but no detectable filter value problem
+
+    logger.info(f"fix_widget_sql: retrying with filter correction for sql={sql[:80]!r}")
+    try:
+        return refine_widget(
+            current_sql=sql,
+            nl_modification=note + "\nFix the WHERE clause to use the correct values and return an updated widget JSON.",
+        )
+    except Exception as exc:
+        logger.warning(f"fix_widget_sql: refine failed: {exc}")
+        return None
+
+
 def _build_agent_model():
     model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     return GenerativeModel(
@@ -730,6 +862,15 @@ def _execute_bq_call(fc, token: str | None) -> Part:
                 "Add more specific WHERE filters or GROUP BY to reduce the result set."
             )
             logger.warning(f"Agent tool: truncated {total}→50 rows for sql={sql[:80]!r}…")
+        elif total == 0:
+            # Check whether 0 rows is caused by a wrong hardcoded string filter value.
+            # If so, attach corrective info so the agent rewrites the WHERE clause.
+            correction = _build_filter_correction_note(sql, token)
+            if correction:
+                resp_data["note"] = correction
+                logger.info(f"Agent tool: 0 rows + filter correction injected for sql={sql[:60]!r}")
+            else:
+                logger.info("Agent tool result: 0 rows")
         else:
             logger.info(f"Agent tool result: {total} rows")
     except Exception as exc:
