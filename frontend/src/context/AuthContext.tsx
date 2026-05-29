@@ -20,6 +20,18 @@ const AuthContext = createContext<AuthContextValue>({
   clearToken: () => {},
 })
 
+// Bump this when OAuth scopes change — clears any cached token that was
+// issued with the old (insufficient) scopes so users aren't silently broken.
+const SCOPE_VERSION = '2'
+
+function migrateStoredAuth() {
+  if (localStorage.getItem('oauth_scope_version') !== SCOPE_VERSION) {
+    localStorage.removeItem('google_oauth_token')
+    localStorage.removeItem('google_user')
+    localStorage.setItem('oauth_scope_version', SCOPE_VERSION)
+  }
+}
+
 function loadStoredUser(): UserProfile | null {
   try {
     const raw = localStorage.getItem('google_user')
@@ -30,6 +42,9 @@ function loadStoredUser(): UserProfile | null {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  // Run once on module load — clears stale tokens from old scope versions.
+  migrateStoredAuth()
+
   const [token, setTokenState] = useState<string>(() => localStorage.getItem('google_oauth_token') ?? '')
   const [user, setUserState] = useState<UserProfile | null>(loadStoredUser)
 
