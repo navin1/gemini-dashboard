@@ -1,4 +1,5 @@
 import os
+import logging
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,6 +8,16 @@ from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Configure logging before any module that creates a logger is imported.
+# Reads LOG_LEVEL, then UVICORN_LOG_LEVEL, then defaults to INFO.
+_log_level = (os.getenv("LOG_LEVEL") or os.getenv("UVICORN_LOG_LEVEL") or "INFO").upper()
+logging.basicConfig(
+    level=_log_level,
+    format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    force=True,  # override any handlers uvicorn already attached
+)
 
 from database import engine, Base
 import models  # noqa: F401 — registers SQLAlchemy models
