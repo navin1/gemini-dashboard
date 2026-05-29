@@ -313,7 +313,15 @@ export function Widget({ widget, onRemove, isFavorited, isFavoritePending, onFav
       {/* Body — hidden when collapsed (widget physically shrinks via layout h change) */}
       {!isCollapsed && (
         <>
-          {widget.error ? (
+          {widget.loading ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-2 text-slate-400 min-h-0">
+              <svg className="animate-spin h-5 w-5 text-brand-400" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+              </svg>
+              <span className="text-[11px]">Loading data…</span>
+            </div>
+          ) : widget.error ? (
             <div className="flex-1 flex flex-col min-h-0 overflow-auto">
               <div className="m-3 flex items-start gap-2.5 px-3 py-2.5 bg-red-50 border border-red-200 rounded-lg">
                 <AlertCircle size={14} className="text-red-500 mt-0.5 flex-shrink-0" />

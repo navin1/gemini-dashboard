@@ -103,6 +103,12 @@ export function FTEHierarchyTab({ tabLabel, onRegisterAddWidget }: Props) {
 
   useEffect(() => { saveState(widgets, customKpis) }, [widgets, customKpis])
 
+  // Mark seed widgets as loading while fetch is in flight
+  useEffect(() => {
+    if (!isFetching) return
+    setWidgets((prev) => prev.map(w => SEED_IDS.includes(w.id) ? { ...w, loading: true } : w))
+  }, [isFetching])
+
   useEffect(() => {
     if (!data) return
     const seeds = makeSeeds(data)
@@ -110,7 +116,7 @@ export function FTEHierarchyTab({ tabLabel, onRegisterAddWidget }: Props) {
       const prevMap = new Map(prev.map(w => [w.id, w]))
       const mergedSeeds = seeds.map(s => {
         const p = prevMap.get(s.id)
-        return p ? { ...s, layout: p.layout ?? s.layout } : s
+        return p ? { ...s, layout: p.layout ?? s.layout, loading: false } : s
       })
       const userAdded = prev.filter((w) => !SEED_IDS.includes(w.id))
       return [...mergedSeeds, ...userAdded]
