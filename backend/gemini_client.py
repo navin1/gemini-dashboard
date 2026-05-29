@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # ── Credential resolution ──────────────────────────────────────────────────────
 # Priority: user ADC (gcloud auth application-default login) → SA JSON fallback.
-# BigQuery and Airflow always use user ADC only — SA fallback is Vertex AI only.
+# BigQuery always use user ADC only — SA fallback is Vertex AI only.
 
 def _get_vertex_credentials():
     auth_req = google.auth.transport.requests.Request()
@@ -36,7 +36,7 @@ def _get_vertex_credentials():
     except Exception as e:
         logger.debug(f"Vertex AI: user ADC failed ({type(e).__name__}: {e}), trying SA fallback…")
 
-    # 2. Service-account JSON fallback (Vertex AI only — does not apply to BQ/Airflow)
+    # 2. Service-account JSON fallback (Vertex AI only — does not apply to BQ)
     sa_file = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
     if sa_file and os.path.exists(sa_file):
         try:
