@@ -1,10 +1,10 @@
 import os
 import logging
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -48,6 +48,13 @@ app.include_router(glossary.router)
 app.include_router(scorecard.router)
 app.include_router(pdf.router)
 app.include_router(chat.router)
+
+_main_logger = logging.getLogger("main")
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    _main_logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": str(exc)})
 
 
 @app.get("/api/health")
