@@ -90,6 +90,33 @@ def _get_gcloud_login_credentials():
         return None
 
 
+def _find_gcloud_binary() -> str:
+    """Return the path to the gcloud binary, checking common install locations."""
+    # Try PATH first
+    try:
+        result = subprocess.run(["which", "gcloud"], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except Exception:
+        pass
+
+    # Common install locations on macOS and Linux
+    candidates = [
+        "/usr/lib/google-cloud-sdk/bin/gcloud",
+        "/usr/local/bin/gcloud",
+        "/opt/homebrew/bin/gcloud",
+        str(pathlib.Path.home() / "google-cloud-sdk" / "bin" / "gcloud"),
+        "/snap/bin/gcloud",
+        "/usr/bin/gcloud",
+    ]
+    for path in candidates:
+        if pathlib.Path(path).exists():
+            logger.debug("gcloud binary found at %s", path)
+            return path
+
+    return "gcloud"  # fall back to bare name and let subprocess raise FileNotFoundError
+
+
 def _get_gcloud_print_token() -> str | None:
     """Get a short-lived access token via `gcloud auth print-access-token`.
 
@@ -97,20 +124,24 @@ def _get_gcloud_print_token() -> str | None:
     the credential file lives on disk. Falls back gracefully if gcloud is
     not in PATH or no account is logged in.
     """
+    gcloud = _find_gcloud_binary()
     try:
         result = subprocess.run(
-            ["gcloud", "auth", "print-access-token"],
+            [gcloud, "auth", "print-access-token"],
             capture_output=True, text=True, timeout=10,
         )
         token = result.stdout.strip()
         if token and result.returncode == 0:
-            logger.debug("gcloud print-access-token: obtained short-lived token")
+            logger.debug("gcloud print-access-token: obtained short-lived token (binary=%s)", gcloud)
             return token
         stderr = result.stderr.strip()
-        logger.debug("gcloud print-access-token: returncode=%d stderr=%s", result.returncode, stderr)
+        logger.warning("gcloud print-access-token: returncode=%d stderr=%s (binary=%s)", result.returncode, stderr, gcloud)
+        return None
+    except FileNotFoundError:
+        logger.warning("gcloud print-access-token: gcloud binary not found (tried: %s)", gcloud)
         return None
     except Exception as e:
-        logger.debug("gcloud print-access-token: failed: %s", e)
+        logger.warning("gcloud print-access-token: failed: %s", e)
         return None
 
 
@@ -166,9 +197,9 @@ def get_bq_credentials(token: Optional[str] = None):
         logger.info("get_bq_credentials: using Application Default Credentials")
         return creds
     except Exception as e:
-        logger.debug("get_bq_credentials: ADC failed: %s", e)
+        logger.warning("get_bq_credentials: ADC failed: %s", e)
 
-    raise ValueError(
+    msg = (
         "No valid Google credentials found. Tried (in order):\n"
         "  1. OAuth token from UI / GOOGLE_OAUTH_TOKEN env\n"
         "  2. gcloud auth login (legacy credential file)\n"
@@ -178,3 +209,5 @@ def get_bq_credentials(token: Optional[str] = None):
         "Run 'gcloud auth login' and restart the server, "
         "or set GOOGLE_OAUTH_TOKEN / GOOGLE_APPLICATION_CREDENTIALS in .env"
     )
+    logger.error("get_bq_credentials: all methods exhausted — %s", msg)
+    raise ValueError(msg)
