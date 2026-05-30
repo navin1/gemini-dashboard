@@ -23,9 +23,15 @@ _cors_origins = ["http://localhost:5173", "http://localhost:3000"]
 if os.getenv("CLOUD_RUN_URL"):
     _cors_origins.append(os.getenv("CLOUD_RUN_URL"))
 
+# Specific Chrome extension ID (set CHROME_EXTENSION_ID env var after loading unpacked)
+if os.getenv("CHROME_EXTENSION_ID"):
+    _cors_origins.append(f"chrome-extension://{os.getenv('CHROME_EXTENSION_ID')}")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
+    # Chrome extension IDs are 32 chars from [a-p]; include digits for robustness
+    allow_origin_regex=r"chrome-extension://[a-z0-9]{32}",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

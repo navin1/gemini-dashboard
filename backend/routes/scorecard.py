@@ -1,10 +1,13 @@
 import asyncio
+import logging
+import traceback
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
 from auth import get_request_token
 import bigquery_client
 
 router = APIRouter(prefix="/api/scorecard", tags=["scorecard"])
+logger = logging.getLogger(__name__)
 
 
 async def _run(sql: str, token: Optional[str] = None) -> list[dict]:
@@ -12,6 +15,7 @@ async def _run(sql: str, token: Optional[str] = None) -> list[dict]:
     try:
         return await loop.run_in_executor(None, bigquery_client.run_query, sql, token)
     except Exception as e:
+        logger.error("BigQuery query failed:\n%s", traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 

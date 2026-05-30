@@ -294,15 +294,34 @@ def _response_text(response) -> str:
 
 
 def _parse_json(raw: str) -> dict:
+    import re as _re
     raw = raw.strip()
     if not raw:
         raise ValueError("Model returned an empty response")
+
+    # Strip markdown code fences
     if raw.startswith("```"):
         parts = raw.split("```")
-        raw = parts[1]
+        raw = parts[1].strip()
         if raw.startswith("json"):
-            raw = raw[4:]
-    return json.loads(raw.strip())
+            raw = raw[4:].strip()
+
+    # Try direct parse
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    # Try to extract the first {...} block from within surrounding prose
+    m = _re.search(r'\{.*\}', raw, _re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group())
+        except json.JSONDecodeError:
+            pass
+
+    logger.error("Model returned non-JSON response:\n%s", raw)
+    raise ValueError(f"Model returned non-JSON text: {raw[:300]}")
 
 
 def _require_model():

@@ -1,313 +1,229 @@
-# Gemini Workforce Dashboard
+# Workforce IQ Dashboard
 
-A full-stack analytics dashboard powered by **Gemini 2.5 Flash** that connects to a BigQuery workforce/spend table and lets you explore data through natural language, drag-and-drop charts, multi-turn AI chat, and PDF reports. Deployable to Google Cloud Run in minutes.
-
----
-
-## Features
-
-- **3 Pre-built Scorecards** — FTE Hierarchy, Vendor Summary, Hierarchy Summary (auto-loaded from BigQuery)
-- **AI Dashboard** — type a question in plain English; Gemini generates SQL, picks the best chart type, and explains the results
-- **Dynamic Tabs** — add unlimited custom dashboard tabs, rename them (double-click), close them; state persists across sessions
-- **Floating AI Chat** — conversational multi-turn agent accessible from any tab; inline chart previews with "Add to tab" button
-- **7 Chart Types** — bar, stacked bar, line, combo (bar + line), donut, pie, horizontal bar, and data table
-- **Drag & Drop Grid** — resize and rearrange every widget freely
-- **Favorites** — 6 pre-seeded default queries + save your own; tied to your Google identity
-- **Glossary** — 25 pre-seeded domain terms (FTP, FTE, TM, Capital, etc.); add/edit your own; Gemini uses them as context
-- **PDF Export** — letter-size PDF with cover page, AI-written widget descriptions, red accent theme; filename follows tab name
-- **Graceful degradation** — if Gemini API key is missing or invalid, all scorecards and BigQuery features continue to work; only AI features are disabled with a clear in-app banner
-- **Auth** — Google OAuth token (primary) → service account JSON (fallback)
+A Chrome extension that connects to a local FastAPI backend to provide an interactive workforce and spend management dashboard powered by BigQuery and Gemini AI.
 
 ---
 
-## Prerequisites
-
-| Requirement | Notes |
-|---|---|
-| Python 3.11+ | For local development |
-| Node.js 18+ | For local development |
-| npm 9+ | For local development |
-| Google Cloud project | With BigQuery access |
-| Gemini API key | From [Google AI Studio](https://aistudio.google.com/app/apikey) — optional; app works without it |
-| gcloud CLI | Required for cloud deployment only |
-| Docker | Required for cloud deployment only (used by Cloud Build) |
-
----
-
-## Project Structure
+## What's Inside
 
 ```
 gemini-dashboard/
-├── .env                        # Your credentials (never committed)
-├── Dockerfile                  # Multi-stage build: Node → Python + Playwright
-├── .dockerignore
-├── cloudbuild.yaml             # Cloud Build pipeline: build → push → deploy
-├── dev.sh                      # Local dev: setup / start / stop / restart / status
-├── setup-gcp.sh                # One-time GCP setup (run before first deploy)
-├── deploy.sh                   # Build and deploy to Cloud Run
-├── cleanup-gcp.sh              # Permanently delete all GCP resources for this app
-├── backend/
-│   ├── main.py                 # FastAPI app — serves API + React SPA in production
-│   ├── auth.py                 # OAuth token / service account auth
-│   ├── gemini_client.py        # Gemini 2.5 Flash — widget + chat generation
-│   ├── bigquery_client.py      # BigQuery query execution + scorecard SQL
-│   ├── database.py             # SQLite setup (SQLAlchemy)
-│   ├── models.py               # DB models: User, GlossaryTerm, Favorite, DashboardLayout
-│   ├── schemas.py              # Pydantic request/response schemas
-│   ├── seed_data.py            # Default glossary terms + favorite queries
-│   ├── assets/
-│   │   └── logo.png            # App logo (shown in browser header and PDF)
-│   ├── requirements.txt
-│   └── routes/
-│       ├── query.py            # POST /api/query      — NL → SQL → widget
-│       ├── chat.py             # POST /api/chat       — multi-turn conversation
-│       ├── scorecard.py        # GET  /api/scorecard/ — pre-built scorecard data
-│       ├── favorites.py        # CRUD /api/favorites
-│       ├── glossary.py         # CRUD /api/glossary
-│       └── pdf.py              # POST /api/pdf/export — Playwright PDF generation
-├── frontend/
-│   ├── public/
-│   │   └── logo.png            # Served at /logo.png by Vite / FastAPI static
-│   └── src/
-│       ├── App.tsx             # Root: dynamic tab bar + chat panel
-│       ├── tabs/               # FTEHierarchyTab, VendorSummaryTab, HierarchySummaryTab, AIDashboardTab, FavoritesTab, GlossaryTab
-│       ├── components/
-│       │   ├── Charts/         # ChartRenderer (all 7 chart types via Recharts)
-│       │   ├── Chat/           # ChatPanel with voice input + suggested questions
-│       │   ├── Dashboard/      # DashboardGrid (react-grid-layout) + Widget shell
-│       │   ├── DataTable/      # Sortable, paginated table with numeric right-alignment
-│       │   ├── Header/         # App header with logo + KPI cards + token input
-│       │   └── QueryBar/       # NL query input with suggestions
-│       ├── api/                # Typed Axios clients for each backend route
-│       ├── context/            # AuthContext (OAuth token management)
-│       └── types/              # Shared TypeScript types
-└── data/
-    └── app.db                  # SQLite database (auto-created on first run)
+├── backend/            FastAPI server — BigQuery queries, Gemini AI, PDF export
+├── extension/          Built Chrome extension (load this folder in Chrome)
+├── setup-local.sh      One-time setup script (run this first)
+├── uninstall-local.sh  Removes the login service
+├── .env.example        Configuration template
+└── README.md
 ```
 
 ---
 
-## Local Development
+## Requirements
 
-### 1. Configure environment variables
+| Requirement | Notes |
+|---|---|
+| macOS | Setup script uses macOS launchd |
+| Python 3.9+ | Any version — script auto-detects |
+| Google Chrome | Any recent version |
+| GCP account | Needs BigQuery access on your project |
+| gcloud CLI | For authentication — [install here](https://cloud.google.com/sdk/docs/install) |
 
-Create your `.env` file in the project root:
+---
+
+## First-Time Setup
+
+### Step 1 — Configure your environment
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` and fill in your BigQuery details at minimum:
 
 ```env
-# ── Gemini ──────────────────────────────────────────────────────────────────
-# Get from https://aistudio.google.com/app/apikey
-# Optional — app works without it (AI features will be disabled)
-GEMINI_API_KEY=your_gemini_api_key_here
-
-# ── Google Authentication (at least one required) ────────────────────────────
-# PRIMARY: Short-lived Google OAuth2 token
-# Run: gcloud auth print-access-token
-GOOGLE_OAUTH_TOKEN=
-
-# FALLBACK: Path to a Google service account JSON key file
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
-
-# ── BigQuery ──────────────────────────────────────────────────────────────────
-BIGQUERY_PROJECT_ID=your_project_id
-BIGQUERY_DATASET=your_dataset
-BIGQUERY_TABLE=your_table
+BIGQUERY_TABLES=your-project.your-dataset.your-table
+BQ_JOB_PROJECT_ID=your-gcp-project-id
+VERTEX_AI_PROJECT=your-gcp-project-id
 ```
 
-> **Auth priority:** `GOOGLE_OAUTH_TOKEN` is used first. If blank, the backend falls back to `GOOGLE_APPLICATION_CREDENTIALS`. At least one must be set for BigQuery access.
+See `.env.example` for all available options with descriptions.
 
-### 2. Install dependencies
+### Step 2 — Run the setup script
 
 ```bash
-./dev.sh setup
+./setup-local.sh
 ```
 
-This creates a Python virtual environment, installs all Python and Node dependencies, and installs Playwright's Chromium for PDF export. Run once.
+This single script handles everything automatically:
+- Finds Python 3.9+ on your machine (checks all common install locations)
+- Creates an isolated virtual environment in `backend/.venv`
+- Installs all Python dependencies
+- Installs Playwright browser (used for PDF export)
+- Runs `gcloud auth application-default login` (opens a browser — sign in once)
+- Registers the backend as a **macOS login service** that auto-starts on every login
 
-### 3. Start the app
+> The backend starts immediately after setup and auto-starts on every login.
+> No terminal window needs to stay open.
 
+### Step 3 — Load the Chrome extension
+
+1. Open Chrome → go to `chrome://extensions`
+2. Enable **Developer mode** (toggle, top-right corner)
+3. Click **Load unpacked**
+4. Select the `extension/` folder inside this project
+
+The Workforce IQ icon appears in your Chrome toolbar. Click it to open the dashboard.
+
+### Step 4 — Authenticate in the extension
+
+Click the gear icon (⚙) in the dashboard header to open Settings.
+
+**Recommended — Application Default Credentials**
+If `setup-local.sh` completed successfully, ADC is already configured. Leave all token fields empty — the backend uses your gcloud credentials automatically. No further action needed.
+
+**Alternative — Manual token**
+Paste a short-lived token from:
 ```bash
-./dev.sh start
+gcloud auth print-access-token
 ```
+Tokens expire after ~1 hour. ADC is strongly preferred for daily use.
 
-Starts the FastAPI backend on **port 8000** and the Vite frontend on **port 5173**. The Vite dev server proxies all `/api/*` requests to the backend — no CORS configuration needed.
+---
 
-| URL | Description |
+## GCP Permissions Required
+
+Your Google account needs these IAM roles on your GCP project:
+
+| Role | Purpose |
 |---|---|
-| http://localhost:5173 | Dashboard |
-| http://localhost:8000/docs | FastAPI interactive docs |
-| http://localhost:8000/api/health | Health check |
+| `roles/bigquery.dataViewer` | Read BigQuery tables |
+| `roles/bigquery.jobUser` | Run BigQuery queries |
+| `roles/aiplatform.user` | Use Vertex AI / Gemini AI chat |
 
-### Other dev commands
+---
+
+## Managing the Backend Service
+
+The backend runs silently as a macOS login service. Useful commands:
 
 ```bash
-./dev.sh stop      # stop both servers
-./dev.sh restart   # stop then start
-./dev.sh status    # check if servers are running
+# Check if the server is running
+curl http://localhost:8000/api/health
+
+# View live logs
+tail -f ~/Library/Logs/gemini-dashboard.log
+
+# Stop the server
+launchctl unload ~/Library/LaunchAgents/com.gemini-dashboard.backend.plist
+
+# Start the server
+launchctl load ~/Library/LaunchAgents/com.gemini-dashboard.backend.plist
+
+# Remove the login service entirely
+./uninstall-local.sh
 ```
 
 ---
 
-## Setting Your OAuth Token in the UI
+## Receiving an Update
 
-1. Run `gcloud auth print-access-token` in your terminal
-2. Click the **login icon** in the top-right corner of the dashboard
-3. Paste the token — it is stored in your browser's `localStorage`
-4. The header will show **● Authenticated** when the token is active
+When you receive a new zip from the developer:
 
-> Tokens expire after ~1 hour. Re-run `gcloud auth print-access-token` and re-paste when needed.
-
----
-
-## Google Cloud Deployment
-
-The app deploys as a single Cloud Run service: FastAPI serves the API and the pre-built React SPA from the same container. `GEMINI_API_KEY` is stored in Secret Manager and injected at runtime.
-
-### Architecture
-
-```
-Cloud Build
-  └── builds Docker image (Node build → Python runtime + Playwright)
-  └── pushes to Artifact Registry
-  └── deploys to Cloud Run
-         ├── FastAPI (port 8080)
-         │   ├── /api/*         — backend routes
-         │   └── /*             — React SPA (static files)
-         └── Secrets: GEMINI_API_KEY (from Secret Manager)
-```
-
-### Step 1 — One-time GCP setup
-
-```bash
-./setup-gcp.sh
-```
-
-Run this once per GCP project. It will:
-- Prompt for your GCP project ID, region, service name, OAuth Client ID, and Gemini API key
-- Enable required APIs (Cloud Run, Cloud Build, Artifact Registry, Secret Manager, BigQuery)
-- Create an Artifact Registry Docker repository
-- Store `GEMINI_API_KEY` in Secret Manager
-- Create a **dedicated service account** (`<service-name>-sa`) with only the roles it needs:
-  - `roles/secretmanager.secretAccessor`
-  - `roles/bigquery.dataViewer`
-  - `roles/bigquery.jobUser`
-- Save all config to `.env`
-
-### Step 2 — Deploy (and redeploy)
-
-```bash
-./deploy.sh
-```
-
-Submits the build to Cloud Build, waits for completion, then saves the live Cloud Run URL to `.env`.
-
-> First build takes **~5–8 minutes** (Playwright's Chromium layer is large). Subsequent deploys are faster due to layer caching.
-
-### Step 3 — Google OAuth (if using Google Sign-In)
-
-After the first deploy, add your Cloud Run URL to the OAuth Client's **Authorized JavaScript origins**:
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com) → **APIs & Services → Credentials**
-2. Open your OAuth 2.0 Client ID
-3. Under **Authorized JavaScript origins**, add your Cloud Run URL (printed at the end of `./deploy.sh`)
-4. Save
-
-### Teardown
-
-```bash
-./cleanup-gcp.sh
-```
-
-Permanently deletes all GCP resources created for this app:
-- Cloud Run service
-- Artifact Registry repository (all container images)
-- Secret Manager secret
-- IAM policy bindings
-- Dedicated service account
-
-> You must type the GCP project ID to confirm. APIs are intentionally left enabled (project-wide; harmless). BigQuery datasets and tables are never touched.
+1. Unzip and replace the project folder (your `.env` file is excluded from the zip — it is safe)
+2. Reload the extension in Chrome:
+   - `chrome://extensions` → find Workforce IQ → click the **refresh icon**
+3. If the update notes mention "backend dependencies changed", re-run:
+   ```bash
+   ./setup-local.sh
+   ```
+   Otherwise no further steps are needed — the service picks up backend changes on its next restart.
 
 ---
 
-## Using the Dashboard
+## Developer Guide
 
-### Pre-built Scorecards
-The three scorecard tabs (FTE Hierarchy, Vendor Summary, Hierarchy Summary) load automatically from BigQuery. Click **Refresh** to re-query. Click **Export PDF** to download a formatted letter-size report — the filename follows the tab name.
+### Making changes
 
-### AI Dashboard (Query Bar)
-Type any question in plain English:
-- *"Show top 10 vendors by YTD spend"*
-- *"Compare capital vs expense monthly trend"*
-- *"Which resource managers have the most offshore resources?"*
+**Frontend / extension changes:**
+```bash
+# Run from gemini-dashboard-extension/
+npm run build
+```
+Then reload the extension in Chrome (`chrome://extensions` → refresh icon).
 
-Gemini generates the SQL, picks the best chart type, runs the query, and adds a widget to the drag-and-drop grid. Each widget shows an AI-written insight.
+**Backend changes (API, queries, AI logic):**
+```bash
+# Restart the service to pick up changes
+launchctl unload ~/Library/LaunchAgents/com.gemini-dashboard.backend.plist
+launchctl load  ~/Library/LaunchAgents/com.gemini-dashboard.backend.plist
+```
 
-### AI Chat (Floating Panel)
-Click the **AI Analyst** bar at the bottom. You can:
-- Ask follow-up questions in context — *"Now show only Capital spend"*
-- Request explanations — *"What does FTP mean?"*
-- Ask for charts — *"Create a donut chart of bill type split"*
-- Use **voice input** (microphone button) on supported browsers
-- Click **Add to tab** on any inline chart to move it to your current tab
-- Click suggested follow-up questions for quick exploration
+**New Python dependency added to requirements.txt:**
+```bash
+./setup-local.sh   # rebuilds the venv from scratch
+```
 
-### Dynamic Tabs
-- Click **+ New Tab** to create a new AI workspace
-- **Double-click** a custom tab name to rename it — the PDF filename will match
-- **Hover** a custom tab and click **×** to close it
-- Custom tabs persist across browser sessions
+### Building and sharing a new distribution
 
-### Favorites
-- Click the **★** icon on any widget to save the query
-- Open the **Favorites** tab to re-run saved queries or browse the 6 default queries
+```bash
+# 1. Rebuild the extension
+cd /path/to/gemini-dashboard-extension
+npm run build          # outputs to ../gemini-dashboard/extension/
 
-### Glossary
-- Open the **Glossary** tab to browse 25 pre-seeded domain terms
-- Click **Add Term** to create your own terms
-- Gemini uses the glossary as context when generating SQL and explanations
+# 2. Create the zip (run from the parent of gemini-dashboard/)
+cd ..
+zip -r workforce-iq.zip gemini-dashboard/ \
+  --exclude "*/backend/.venv/*" \
+  --exclude "*/.venv/*" \
+  --exclude "*/frontend/*" \
+  --exclude "*/__pycache__/*" \
+  --exclude "*/.git/*" \
+  --exclude "*/.DS_Store" \
+  --exclude "*/*.pyc" \
+  --exclude "*/.env" \
+  --exclude "*/data/*" \
+  --exclude "*/Dockerfile" \
+  --exclude "*/cloudbuild.yaml" \
+  --exclude "*/deploy.sh" \
+  --exclude "*/setup-gcp.sh" \
+  --exclude "*/cleanup-gcp.sh" \
+  --exclude "*/dev.sh" \
+  --exclude "*/.dockerignore" \
+  --exclude "*/package-lock.json" \
+  --exclude "*/.logs/*"
+```
 
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| AI Model | Gemini 2.5 Flash (`google-generativeai`) |
-| Backend | FastAPI + Uvicorn |
-| Database | SQLite via SQLAlchemy |
-| BigQuery | `google-cloud-bigquery` |
-| PDF | Playwright (headless Chromium) + pypdf (page merging) |
-| Frontend | React 18 + TypeScript + Vite |
-| Styling | Tailwind CSS |
-| Charts | Recharts |
-| Dashboard grid | react-grid-layout |
-| HTTP client | Axios |
-| Container | Docker (multi-stage: Node 20 Alpine → Python 3.12 slim) |
-| CI/CD | Google Cloud Build |
-| Hosting | Google Cloud Run |
-| Image registry | Google Artifact Registry |
-| Secrets | Google Secret Manager |
+Share `workforce-iq.zip`. Recipients follow **First-Time Setup** above.
 
 ---
 
 ## Troubleshooting
 
-**AI Analyst unavailable banner appears**
-The app detected that `GEMINI_API_KEY` is missing, invalid, or quota-exceeded. BigQuery scorecards still work normally. Set a valid key in `.env` (local) or update the Secret Manager secret and redeploy (cloud).
+**Dashboard shows "Could not refresh data"**
+- Verify the backend is running: `curl http://localhost:8000/api/health`
+- If not running: `launchctl load ~/Library/LaunchAgents/com.gemini-dashboard.backend.plist`
+- Check logs: `tail -f ~/Library/Logs/gemini-dashboard.log`
 
-**BigQuery permission error**
-Ensure your OAuth token or service account has `BigQuery Data Viewer` and `BigQuery Job User` roles on the BigQuery project.
+**403 Access Denied from BigQuery**
+- Your account is missing the required IAM roles — see [GCP Permissions](#gcp-permissions-required)
+- Re-run authentication: `gcloud auth application-default login`
 
-**PDF export fails locally**
-Playwright's Chromium must be installed: run `./dev.sh setup` (it installs Chromium automatically). If you installed manually, run `playwright install chromium` inside the virtual environment.
+**Token expired (manual token mode)**
+- Paste a fresh token in Settings → Manual Token: `gcloud auth print-access-token`
+- Switch to ADC (recommended) to avoid this entirely
 
-**PDF export fails on Cloud Run**
-The Dockerfile includes all Chromium system dependencies and runs `playwright install chromium` at build time. If it still fails, check Cloud Run logs for missing shared libraries.
+**PDF export fails**
+- Playwright browser may not be installed — re-run `./setup-local.sh`
 
-**OAuth token expired**
-Tokens expire after ~1 hour. Re-run `gcloud auth print-access-token` and update the token in the dashboard header.
+**AI chat returns an error**
+- Verify `VERTEX_AI_PROJECT` in `.env` is a valid GCP project ID
+- Ensure `roles/aiplatform.user` is granted on that project
+- Check logs: `tail -f ~/Library/Logs/gemini-dashboard.log`
 
-**Custom tabs lost after refresh**
-Custom tab configuration is stored in `localStorage`. Clearing browser data will reset them. Widget data is in-memory only — re-run queries after a page refresh.
+**Extension not loading in Chrome**
+- Make sure you selected the `extension/` folder, not the project root
+- Developer mode must be enabled in `chrome://extensions`
 
-**Cloud Build fails on first run**
-Ensure `./setup-gcp.sh` was run first (enables required APIs, creates the Artifact Registry repo, and stores the secret). Check that the Cloud Build service account (`<project-number>@cloudbuild.gserviceaccount.com`) has the `Cloud Run Admin` and `Service Account User` roles if not already granted.
+**setup-local.sh: Python not found**
+- Install Python 3.9+: `brew install python3` or from [python.org](https://www.python.org/downloads/)
+- Re-run `./setup-local.sh`

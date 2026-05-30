@@ -4,7 +4,7 @@ import base64
 import tempfile
 import os
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from schemas import PDFRequest
 import gemini_client
@@ -466,7 +466,13 @@ async def _render_html(browser, html: str, has_charts: bool, dest: str, header_f
 @router.post("/export")
 async def export_pdf(req: PDFRequest):
     from datetime import date
-    from playwright.async_api import async_playwright
+    try:
+        from playwright.async_api import async_playwright
+    except ModuleNotFoundError:
+        raise HTTPException(
+            status_code=503,
+            detail="PDF export requires Playwright. Run: playwright install chromium"
+        )
     from pypdf import PdfWriter, PdfReader
 
     date_str = date.today().strftime("%B %d, %Y")

@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Workforce IQ Dashboard",
+  "version": "1.0.0",
+  "description": "Gemini Workforce Dashboard — opens as a new tab",
+  "action": {
+    "default_title": "Open Workforce IQ Dashboard"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["storage", "identity"],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "https://www.googleapis.com/*",
+    "https://accounts.google.com/*"
+  ]
+}
