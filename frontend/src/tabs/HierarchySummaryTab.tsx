@@ -27,11 +27,12 @@ function saveState(widgets: Widget[], customKpis: CustomKpi[]) {
   } catch { /* quota exceeded */ }
 }
 
-function sql(data: ScorecardHierarchy, key: string) {
-  return data._sql?.[key] ?? ''
+function sql(data: ScorecardHierarchy | null, key: string) {
+  return data?._sql?.[key] ?? ''
 }
 
-function makeSeeds(data: ScorecardHierarchy): Widget[] {
+function makeSeeds(data: ScorecardHierarchy | null, fetchError?: string): Widget[] {
+  const e = (key: string) => fetchError ?? data?._errors?.[key]
   return [
     // Left column — tier breakdown metrics
     {
@@ -39,7 +40,8 @@ function makeSeeds(data: ScorecardHierarchy): Widget[] {
       chart_type: 'table', x_axis: undefined, y_axis: [],
       stacked: false, dual_axis: false,
       ai_description: 'Per-tier summary of offshore %, fixed fee %, and capital % with headcount and spend.',
-      sql: sql(data, 'tier_breakdown'), data: data.tier_breakdown,
+      sql: sql(data, 'tier_breakdown'), data: data?.tier_breakdown ?? [],
+      error: e('tier_breakdown'),
       layout: { i: 'hier_tier_breakdown', x: 0, y: 10, w: 3, h: 8 },
     },
     // Center — hierarchy drill-down table
@@ -48,7 +50,8 @@ function makeSeeds(data: ScorecardHierarchy): Widget[] {
       chart_type: 'table', x_axis: undefined, y_axis: [],
       stacked: false, dual_axis: false,
       ai_description: 'Hierarchy breakdown by VP, vendor, and manager with spend, offshore %, TM %, capital % and expense %.',
-      sql: sql(data, 'hierarchy_drill'), data: data.hierarchy_drill,
+      sql: sql(data, 'hierarchy_drill'), data: data?.hierarchy_drill ?? [],
+      error: e('hierarchy_drill'),
       layout: { i: 'hier_drill', x: 3, y: 10, w: 9, h: 14 },
     },
     // Bottom row
@@ -57,7 +60,8 @@ function makeSeeds(data: ScorecardHierarchy): Widget[] {
       chart_type: 'line', x_axis: 'month', y_axis: ['Dollars'], color_field: 'Resource_Category',
       stacked: false, dual_axis: false,
       ai_description: 'Monthly spend trend broken down by resource tier.',
-      sql: sql(data, 'spend_by_tier_monthly'), data: data.spend_by_tier_monthly,
+      sql: sql(data, 'spend_by_tier_monthly'), data: data?.spend_by_tier_monthly ?? [],
+      error: e('spend_by_tier_monthly'),
       layout: { i: 'hier_cat_monthly', x: 0, y: 0, w: 4, h: 6 },
     },
     {
@@ -65,7 +69,8 @@ function makeSeeds(data: ScorecardHierarchy): Widget[] {
       chart_type: 'stacked_bar', x_axis: 'month', y_axis: [], color_field: 'BillType',
       stacked: true, dual_axis: false,
       ai_description: 'Monthly spend trend split by TM and Fixed Fee billing type.',
-      sql: sql(data, 'monthly_vendor_spend'), data: data.billtype_monthly,
+      sql: sql(data, 'monthly_vendor_spend'), data: data?.billtype_monthly ?? [],
+      error: e('monthly_vendor_spend'),
       layout: { i: 'hier_billtype_monthly', x: 4, y: 0, w: 4, h: 6 },
     },
   ]
@@ -104,6 +109,20 @@ export function HierarchySummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
       return [...mergedSeeds, ...userAdded]
     })
   }, [data])
+
+  useEffect(() => {
+    if (!isError || isFetching) return
+    setWidgets((prev) => {
+      const seeds = makeSeeds(null, 'Failed to load data from server')
+      const prevMap = new Map(prev.map(w => [w.id, w]))
+      const merged = seeds.map(s => {
+        const p = prevMap.get(s.id)
+        return p ? { ...p, error: s.error, loading: false } : s
+      })
+      const userAdded = prev.filter(w => !SEED_IDS.includes(w.id))
+      return [...merged, ...userAdded]
+    })
+  }, [isError, isFetching])
 
   const addExternalWidget = useCallback((w: Widget) => {
     if (w.chart_type === 'kpi') {
@@ -148,15 +167,16 @@ export function HierarchySummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
   }
 
   if ((isLoading || isFetching) && !widgets.length) return <LoadingOverlay label="Loading Hierarchy Summary…" />
-  if (isError && !isFetching) return (
-    <div className="p-8 text-center">
-      <p className="text-red-600 font-medium mb-3">Failed to load hierarchy data</p>
-      <button onClick={() => refetch()} className="text-sm text-brand-600 underline">Retry</button>
-    </div>
-  )
 
   return (
     <div className="flex flex-col gap-4 p-4">
+      {isError && !isFetching && (
+        <div className="flex items-center gap-2.5 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+          <span className="font-semibold">Failed to load scorecard data.</span>
+          <span className="text-red-500">Individual widget errors are shown below.</span>
+          <button onClick={() => refetch()} className="ml-auto text-red-600 underline font-medium">Retry</button>
+        </div>
+      )}
       <div className="flex items-center gap-3 flex-wrap">
         {customKpis.map((k) => (
           <KPICard key={k.id} label={k.label} value={k.value} onRemove={() => removeCustomKpi(k.id)} />

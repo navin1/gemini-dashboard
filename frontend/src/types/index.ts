@@ -96,6 +96,7 @@ export interface ScorecardFTE {
   hierarchy_table: Record<string, unknown>[]
   capital_expense_donut: Record<string, unknown>[]
   monthly_cap_exp_ftp: Record<string, unknown>[]
+  _errors?: Record<string, string>
   _sql: Record<string, string>
 }
 
@@ -109,6 +110,7 @@ export interface ScorecardVendor {
   tier_breakdown: Record<string, unknown>[]
   vendor_resource_count: Record<string, unknown>[]
   vendor_kpis: Record<string, unknown>[]
+  _errors?: Record<string, string>
   _sql: Record<string, string>
 }
 
@@ -117,5 +119,6 @@ export interface ScorecardHierarchy {
   spend_by_tier_monthly: Record<string, unknown>[]
   billtype_monthly: Record<string, unknown>[]
   tier_breakdown: Record<string, unknown>[]
+  _errors?: Record<string, string>
   _sql: Record<string, string>
 }

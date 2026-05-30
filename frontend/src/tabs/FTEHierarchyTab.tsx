@@ -27,12 +27,13 @@ function saveState(widgets: Widget[], customKpis: CustomKpi[]) {
   } catch { /* quota exceeded */ }
 }
 
-function sql(data: ScorecardFTE, key: string, suffix = '') {
-  const q = data._sql?.[key] ?? ''
+function sql(data: ScorecardFTE | null, key: string, suffix = '') {
+  const q = data?._sql?.[key] ?? ''
   return suffix ? `${q}\n-- ${suffix}` : q
 }
 
-function makeSeeds(data: ScorecardFTE): Widget[] {
+function makeSeeds(data: ScorecardFTE | null, fetchError?: string): Widget[] {
+  const e = (key: string) => fetchError ?? data?._errors?.[key]
   return [
     // Left column — 3 stacked charts (w=4)
     {
@@ -40,7 +41,8 @@ function makeSeeds(data: ScorecardFTE): Widget[] {
       chart_type: 'stacked_bar', x_axis: 'month', y_axis: [], color_field: 'Project_Class',
       stacked: true, dual_axis: false,
       ai_description: 'Monthly capital vs expense spend trend across all 12 months.',
-      sql: sql(data, 'monthly_capital_expense'), data: data.monthly_capital_expense,
+      sql: sql(data, 'monthly_capital_expense'), data: data?.monthly_capital_expense ?? [],
+      error: e('monthly_capital_expense'),
       layout: { i: 'fte_spend_class', x: 0, y: 0, w: 4, h: 5 },
     },
     {
@@ -48,7 +50,8 @@ function makeSeeds(data: ScorecardFTE): Widget[] {
       chart_type: 'combo', x_axis: 'month', y_axis: ['Capital', 'FTP'], secondary_y: 'FTP',
       stacked: false, dual_axis: true,
       ai_description: 'Monthly capital spend (bars) overlaid with total FTE headcount (line).',
-      sql: sql(data, 'monthly_cap_exp_ftp', 'fte_capital_combo'), data: data.monthly_cap_exp_ftp,
+      sql: sql(data, 'monthly_cap_exp_ftp', 'fte_capital_combo'), data: data?.monthly_cap_exp_ftp ?? [],
+      error: e('monthly_cap_exp_ftp'),
       layout: { i: 'fte_capital_combo', x: 0, y: 8, w: 4, h: 5 },
     },
     {
@@ -56,7 +59,8 @@ function makeSeeds(data: ScorecardFTE): Widget[] {
       chart_type: 'combo', x_axis: 'month', y_axis: ['Expense', 'FTP'], secondary_y: 'FTP',
       stacked: false, dual_axis: true,
       ai_description: 'Monthly expense spend (bars) overlaid with total FTE headcount (line).',
-      sql: sql(data, 'monthly_cap_exp_ftp', 'fte_expense_combo'), data: data.monthly_cap_exp_ftp,
+      sql: sql(data, 'monthly_cap_exp_ftp', 'fte_expense_combo'), data: data?.monthly_cap_exp_ftp ?? [],
+      error: e('monthly_cap_exp_ftp'),
       layout: { i: 'fte_expense_combo', x: 0, y: 16, w: 4, h: 5 },
     },
     // Center — hierarchy table (tall, spans full left-column height)
@@ -65,7 +69,8 @@ function makeSeeds(data: ScorecardFTE): Widget[] {
       chart_type: 'table', x_axis: undefined, y_axis: [],
       stacked: false, dual_axis: false,
       ai_description: 'Hierarchy breakdown of headcount, FTE, capital %, and spend by resource VP and manager.',
-      sql: sql(data, 'hierarchy_table'), data: data.hierarchy_table,
+      sql: sql(data, 'hierarchy_table'), data: data?.hierarchy_table ?? [],
+      error: e('hierarchy_table'),
       layout: { i: 'fte_table', x: 4, y: 0, w: 8, h: 15 },
     },
     // Bottom row
@@ -74,7 +79,8 @@ function makeSeeds(data: ScorecardFTE): Widget[] {
       chart_type: 'donut', x_axis: 'type', y_axis: ['amount'],
       stacked: false, dual_axis: false,
       ai_description: 'Year-to-date split between capital and expense spend.',
-      sql: sql(data, 'capital_expense_donut'), data: data.capital_expense_donut,
+      sql: sql(data, 'capital_expense_donut'), data: data?.capital_expense_donut ?? [],
+      error: e('capital_expense_donut'),
       layout: { i: 'fte_donut', x: 4, y: 24, w: 4, h: 5 },
     },
     {
@@ -82,7 +88,8 @@ function makeSeeds(data: ScorecardFTE): Widget[] {
       chart_type: 'combo', x_axis: 'month', y_axis: ['Capital', 'Expense', 'FTP'], secondary_y: 'FTP',
       stacked: true, dual_axis: true,
       ai_description: 'Monthly stacked capital and expense spend with FTE headcount overlay.',
-      sql: sql(data, 'monthly_cap_exp_ftp', 'fte_cap_exp_ftp'), data: data.monthly_cap_exp_ftp,
+      sql: sql(data, 'monthly_cap_exp_ftp', 'fte_cap_exp_ftp'), data: data?.monthly_cap_exp_ftp ?? [],
+      error: e('monthly_cap_exp_ftp'),
       layout: { i: 'fte_cap_exp_ftp', x: 0, y: 24, w: 4, h: 5 },
     },
   ]
@@ -122,6 +129,20 @@ export function FTEHierarchyTab({ tabLabel, onRegisterAddWidget }: Props) {
       return [...mergedSeeds, ...userAdded]
     })
   }, [data])
+
+  useEffect(() => {
+    if (!isError || isFetching) return
+    setWidgets((prev) => {
+      const seeds = makeSeeds(null, 'Failed to load data from server')
+      const prevMap = new Map(prev.map(w => [w.id, w]))
+      const merged = seeds.map(s => {
+        const p = prevMap.get(s.id)
+        return p ? { ...p, error: s.error, loading: false } : s
+      })
+      const userAdded = prev.filter(w => !SEED_IDS.includes(w.id))
+      return [...merged, ...userAdded]
+    })
+  }, [isError, isFetching])
 
   const addExternalWidget = useCallback((w: Widget) => {
     if (w.chart_type === 'kpi') {
@@ -168,15 +189,16 @@ export function FTEHierarchyTab({ tabLabel, onRegisterAddWidget }: Props) {
   const kpi = data?.kpi?.[0] as KPIData | undefined
 
   if ((isLoading || isFetching) && !widgets.length) return <LoadingOverlay label="Loading FTE Hierarchy Scorecard…" />
-  if (isError && !isFetching) return (
-    <div className="p-8 text-center">
-      <p className="text-red-600 font-medium mb-3">Failed to load scorecard data</p>
-      <button onClick={() => refetch()} className="text-sm text-brand-600 underline">Retry</button>
-    </div>
-  )
 
   return (
     <div className="flex flex-col gap-4 p-4">
+      {isError && !isFetching && (
+        <div className="flex items-center gap-2.5 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+          <span className="font-semibold">Failed to load scorecard data.</span>
+          <span className="text-red-500">Individual widget errors are shown below.</span>
+          <button onClick={() => refetch()} className="ml-auto text-red-600 underline font-medium">Retry</button>
+        </div>
+      )}
       {(kpi || customKpis.length > 0) && (
         <div className="flex items-center gap-3 flex-wrap">
           {kpi && <>

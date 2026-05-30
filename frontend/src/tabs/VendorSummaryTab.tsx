@@ -27,11 +27,12 @@ function saveState(widgets: Widget[], customKpis: CustomKpi[]) {
   } catch { /* quota exceeded */ }
 }
 
-function sql(data: ScorecardVendor, key: string) {
-  return data._sql?.[key] ?? ''
+function sql(data: ScorecardVendor | null, key: string) {
+  return data?._sql?.[key] ?? ''
 }
 
-function makeSeeds(data: ScorecardVendor): Widget[] {
+function makeSeeds(data: ScorecardVendor | null, fetchError?: string): Widget[] {
+  const e = (key: string) => fetchError ?? data?._errors?.[key]
   return [
     // ── Trend charts row ──
     {
@@ -39,7 +40,8 @@ function makeSeeds(data: ScorecardVendor): Widget[] {
       chart_type: 'line', x_axis: 'month', y_axis: ['Dollars'], color_field: 'Resource_Category',
       stacked: false, dual_axis: false,
       ai_description: 'Monthly spend trend broken down by resource tier (Tier 1–4).',
-      sql: sql(data, 'spend_by_tier_monthly'), data: data.spend_by_tier_monthly,
+      sql: sql(data, 'spend_by_tier_monthly'), data: data?.spend_by_tier_monthly ?? [],
+      error: e('spend_by_tier_monthly'),
       layout: { i: 'vendor_spend_by_tier', x: 0, y: 3, w: 4, h: 6 },
     },
     {
@@ -47,7 +49,8 @@ function makeSeeds(data: ScorecardVendor): Widget[] {
       chart_type: 'stacked_bar', x_axis: 'month', y_axis: [], color_field: 'BillType',
       stacked: true, dual_axis: false,
       ai_description: 'Monthly spend trend split by TM and Fixed Fee billing models.',
-      sql: sql(data, 'monthly_vendor_spend'), data: data.monthly_vendor_spend,
+      sql: sql(data, 'monthly_vendor_spend'), data: data?.monthly_vendor_spend ?? [],
+      error: e('monthly_vendor_spend'),
       layout: { i: 'vendor_monthly', x: 4, y: 3, w: 4, h: 5 },
     },
     {
@@ -55,7 +58,8 @@ function makeSeeds(data: ScorecardVendor): Widget[] {
       chart_type: 'combo', x_axis: 'month', y_axis: ['Capital', 'Expense', 'FTP'], secondary_y: 'FTP',
       stacked: true, dual_axis: true,
       ai_description: 'Monthly stacked capital and expense spend with total FTP headcount overlay.',
-      sql: sql(data, 'monthly_cap_exp_ftp'), data: data.monthly_cap_exp_ftp,
+      sql: sql(data, 'monthly_cap_exp_ftp'), data: data?.monthly_cap_exp_ftp ?? [],
+      error: e('monthly_cap_exp_ftp'),
       layout: { i: 'vendor_cap_exp_ftp', x: 8, y: 3, w: 4, h: 5 },
     },
     // ── Resource count bar + billtype bar ──
@@ -64,7 +68,8 @@ function makeSeeds(data: ScorecardVendor): Widget[] {
       chart_type: 'bar', x_axis: 'Vendor', y_axis: ['Resource_Count'],
       stacked: false, dual_axis: false,
       ai_description: 'Headcount per external vendor (top 15), showing which vendors contribute the most resources.',
-      sql: sql(data, 'vendor_resource_count'), data: data.vendor_resource_count,
+      sql: sql(data, 'vendor_resource_count'), data: data?.vendor_resource_count ?? [],
+      error: e('vendor_resource_count'),
       layout: { i: 'vendor_resource_count', x: 0, y: 9, w: 4, h: 6 },
     },
     {
@@ -72,7 +77,8 @@ function makeSeeds(data: ScorecardVendor): Widget[] {
       chart_type: 'horizontal_bar', x_axis: 'BillType', y_axis: ['Spend'],
       stacked: false, dual_axis: false,
       ai_description: 'Spend breakdown between Time & Materials and Fixed Fee billing.',
-      sql: sql(data, 'billtype_bar'), data: data.billtype_bar,
+      sql: sql(data, 'billtype_bar'), data: data?.billtype_bar ?? [],
+      error: e('billtype_bar'),
       layout: { i: 'vendor_billtype_bar', x: 8, y: 9, w: 4, h: 6 },
     },
     // ── Left column — tier + offshore bars; Center/right — vendor table ──
@@ -81,7 +87,8 @@ function makeSeeds(data: ScorecardVendor): Widget[] {
       chart_type: 'horizontal_bar', x_axis: 'FOB', y_axis: ['FTE'],
       stacked: false, dual_axis: false,
       ai_description: 'FTE distribution between offshore and onshore locations.',
-      sql: sql(data, 'offshore_onshore_bar'), data: data.offshore_onshore_bar,
+      sql: sql(data, 'offshore_onshore_bar'), data: data?.offshore_onshore_bar ?? [],
+      error: e('offshore_onshore_bar'),
       layout: { i: 'vendor_offshore', x: 0, y: 16, w: 4, h: 5 },
     },
     {
@@ -89,7 +96,8 @@ function makeSeeds(data: ScorecardVendor): Widget[] {
       chart_type: 'table', x_axis: undefined, y_axis: [],
       stacked: false, dual_axis: false,
       ai_description: 'Per-tier summary of offshore %, fixed fee %, and capital % with headcount and spend.',
-      sql: sql(data, 'tier_breakdown'), data: data.tier_breakdown,
+      sql: sql(data, 'tier_breakdown'), data: data?.tier_breakdown ?? [],
+      error: e('tier_breakdown'),
       layout: { i: 'vendor_tier_breakdown', x: 0, y: 21, w: 4, h: 8 },
     },
     {
@@ -97,7 +105,8 @@ function makeSeeds(data: ScorecardVendor): Widget[] {
       chart_type: 'table', x_axis: undefined, y_axis: [],
       stacked: false, dual_axis: false,
       ai_description: 'Vendor breakdown including FTP, offshore/onshore ratio, TM %, fixed fee %, capital %, and committed spend.',
-      sql: sql(data, 'vendor_table'), data: data.vendor_table,
+      sql: sql(data, 'vendor_table'), data: data?.vendor_table ?? [],
+      error: e('vendor_table'),
       layout: { i: 'vendor_table', x: 4, y: 16, w: 8, h: 14 },
     },
   ]
@@ -136,6 +145,20 @@ export function VendorSummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
       return [...mergedSeeds, ...userAdded]
     })
   }, [data])
+
+  useEffect(() => {
+    if (!isError || isFetching) return
+    setWidgets((prev) => {
+      const seeds = makeSeeds(null, 'Failed to load data from server')
+      const prevMap = new Map(prev.map(w => [w.id, w]))
+      const merged = seeds.map(s => {
+        const p = prevMap.get(s.id)
+        return p ? { ...p, error: s.error, loading: false } : s
+      })
+      const userAdded = prev.filter(w => !SEED_IDS.includes(w.id))
+      return [...merged, ...userAdded]
+    })
+  }, [isError, isFetching])
 
   const addExternalWidget = useCallback((w: Widget) => {
     if (w.chart_type === 'kpi') {
@@ -180,17 +203,18 @@ export function VendorSummaryTab({ tabLabel, onRegisterAddWidget }: Props) {
   }
 
   if ((isLoading || isFetching) && !widgets.length) return <LoadingOverlay label="Loading Vendor Summary…" />
-  if (isError && !isFetching) return (
-    <div className="p-8 text-center">
-      <p className="text-red-600 font-medium mb-3">Failed to load vendor data</p>
-      <button onClick={() => refetch()} className="text-sm text-brand-600 underline">Retry</button>
-    </div>
-  )
 
   const kpi = data?.vendor_kpis?.[0] as Record<string, number> | undefined
 
   return (
     <div className="flex flex-col gap-4 p-4">
+      {isError && !isFetching && (
+        <div className="flex items-center gap-2.5 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+          <span className="font-semibold">Failed to load scorecard data.</span>
+          <span className="text-red-500">Individual widget errors are shown below.</span>
+          <button onClick={() => refetch()} className="ml-auto text-red-600 underline font-medium">Retry</button>
+        </div>
+      )}
       <div className="flex items-center gap-3 flex-wrap">
         {kpi && (
           <>
