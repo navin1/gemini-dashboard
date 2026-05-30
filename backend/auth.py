@@ -159,6 +159,22 @@ def get_bq_credentials(token: Optional[str] = None):
     from google.oauth2 import credentials as oauth2_creds
     import google.auth
 
+    # Quota project is needed for end-user credentials to avoid "quota exceeded" warnings
+    quota_project = (
+        os.getenv("BQ_JOB_PROJECT_ID")
+        or os.getenv("GOOGLE_CLOUD_PROJECT")
+        or os.getenv("GCP_PROJECT_ID")
+        or os.getenv("BIGQUERY_PROJECT_ID")
+    )
+
+    def _with_quota(creds):
+        if quota_project and hasattr(creds, "with_quota_project"):
+            try:
+                return creds.with_quota_project(quota_project)
+            except Exception:
+                pass
+        return creds
+
     effective_token = token or OAUTH_TOKEN_ENV
     if effective_token:
         logger.debug("get_bq_credentials: using OAuth token (UI / env)")
@@ -168,14 +184,14 @@ def get_bq_credentials(token: Optional[str] = None):
     gcloud_creds = _get_gcloud_login_credentials()
     if gcloud_creds is not None:
         logger.info("get_bq_credentials: using gcloud auth login credentials")
-        return gcloud_creds
+        return _with_quota(gcloud_creds)
 
     # gcloud auth print-access-token — short-lived but works on any machine
     # where `gcloud auth login` was done, even if the credential file is missing
     gcloud_token = _get_gcloud_print_token()
     if gcloud_token:
         logger.info("get_bq_credentials: using token from gcloud auth print-access-token")
-        return oauth2_creds.Credentials(token=gcloud_token)
+        return oauth2_creds.Credentials(token=gcloud_token, quota_project_id=quota_project)
 
     # Explicit credential file (service account or authorized_user)
     if SERVICE_ACCOUNT_FILE and os.path.exists(SERVICE_ACCOUNT_FILE):
@@ -189,13 +205,13 @@ def get_bq_credentials(token: Optional[str] = None):
             )
         else:
             creds, _ = google.auth.load_credentials_from_file(SERVICE_ACCOUNT_FILE)
-        return creds
+        return _with_quota(creds)
 
     # Last resort: ADC (gcloud auth application-default login)
     try:
         creds, _ = google.auth.default()
         logger.info("get_bq_credentials: using Application Default Credentials")
-        return creds
+        return _with_quota(creds)
     except Exception as e:
         logger.warning("get_bq_credentials: ADC failed: %s", e)
 
