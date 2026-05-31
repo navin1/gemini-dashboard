@@ -38,6 +38,12 @@ JOB_PROJECT_ID = (
 def _client(token: str | None = None) -> bigquery.Client:
     return bigquery.Client(project=JOB_PROJECT_ID, credentials=get_bq_credentials(token))
 
+# Project_Class in the data uses compound codes (CAPITAL-LABOR, EXPENSE-DIV, OPEX-TECH, etc.)
+# rather than the simple 'Capital'/'Expense' labels the scorecards originally expected.
+_PC_IS_CAPITAL = "project_class LIKE 'CAPITAL%'"
+_PC_IS_EXPENSE = "(project_class LIKE 'EXPENSE%' OR project_class = 'OPEX-TECH')"
+_PC_FILTER     = f"({_PC_IS_CAPITAL} OR {_PC_IS_EXPENSE})"
+_PC_LABEL      = f"CASE WHEN {_PC_IS_CAPITAL} THEN 'Capital' ELSE 'Expense' END"
 
 def build_schema_context(token: str | None = None) -> str:
     """Fetch BigQuery schemas for all configured tables and return a prompt-ready string.
@@ -83,99 +89,102 @@ def run_query(sql: str, token: str | None = None) -> list[dict]:
 FTE_SCORECARD_QUERIES = {
     "kpi_ytd_spend": f"""
         SELECT
-            SUM(YTD_Spend) AS spend_to_date,
-            SUM(YTD_Spend) AS commit_spend,
-            SAFE_DIVIDE(SUM(YTD_Spend), NULLIF(SUM(SAFE_CAST(Budget AS FLOAT64)), 0)) * 100 AS pct_spend
+            SUM(ytd_spend) AS spend_to_date,
+            SUM(ytd_spend) AS commit_spend,
+            SAFE_DIVIDE(SUM(ytd_spend), NULLIF(SUM(SAFE_CAST(budget AS FLOAT64)), 0)) * 100 AS pct_spend
         FROM {TABLE_REF}
     """,
 
     "monthly_capital_expense": f"""
-        SELECT month, Project_Class, SUM(Dollars) AS Dollars
+        SELECT month, project_class, SUM(Dollars) AS Dollars
         FROM (
-            SELECT 'Jan' AS month, 1 AS m_ord, Project_Class, Period_01_Dollars AS Dollars FROM {TABLE_REF} WHERE Project_Class IN ('Capital','Expense')
-            UNION ALL SELECT 'Feb',2, Project_Class, Period_02_Dollars FROM {TABLE_REF} WHERE Project_Class IN ('Capital','Expense')
-            UNION ALL SELECT 'Mar',3, Project_Class, Period_03_Dollars FROM {TABLE_REF} WHERE Project_Class IN ('Capital','Expense')
-            UNION ALL SELECT 'Apr',4, Project_Class, Period_04_Dollars FROM {TABLE_REF} WHERE Project_Class IN ('Capital','Expense')
-            UNION ALL SELECT 'May',5, Project_Class, Period_05_Dollars FROM {TABLE_REF} WHERE Project_Class IN ('Capital','Expense')
-            UNION ALL SELECT 'Jun',6, Project_Class, Period_06_Dollars FROM {TABLE_REF} WHERE Project_Class IN ('Capital','Expense')
-            UNION ALL SELECT 'Jul',7, Project_Class, Period_07_Dollars FROM {TABLE_REF} WHERE Project_Class IN ('Capital','Expense')
-            UNION ALL SELECT 'Aug',8, Project_Class, Period_08_Dollars FROM {TABLE_REF} WHERE Project_Class IN ('Capital','Expense')
-            UNION ALL SELECT 'Sep',9, Project_Class, Period_09_Dollars FROM {TABLE_REF} WHERE Project_Class IN ('Capital','Expense')
-            UNION ALL SELECT 'Oct',10, Project_Class, Period_10_Dollars FROM {TABLE_REF} WHERE Project_Class IN ('Capital','Expense')
-            UNION ALL SELECT 'Nov',11, Project_Class, Period_11_Dollars FROM {TABLE_REF} WHERE Project_Class IN ('Capital','Expense')
-            UNION ALL SELECT 'Dec',12, Project_Class, Period_12_Dollars FROM {TABLE_REF} WHERE Project_Class IN ('Capital','Expense')
+            SELECT month, m_ord, {_PC_LABEL} AS project_class, Dollars
+            FROM (
+                SELECT 'Jan' AS month, 1 AS m_ord, project_class, period_01dollars AS Dollars FROM {TABLE_REF} WHERE {_PC_FILTER}
+                UNION ALL SELECT 'Feb',2, project_class, period_02dollars FROM {TABLE_REF} WHERE {_PC_FILTER}
+                UNION ALL SELECT 'Mar',3, project_class, period_03dollars FROM {TABLE_REF} WHERE {_PC_FILTER}
+                UNION ALL SELECT 'Apr',4, project_class, period_04dollars FROM {TABLE_REF} WHERE {_PC_FILTER}
+                UNION ALL SELECT 'May',5, project_class, period_05dollars FROM {TABLE_REF} WHERE {_PC_FILTER}
+                UNION ALL SELECT 'Jun',6, project_class, period_06dollars FROM {TABLE_REF} WHERE {_PC_FILTER}
+                UNION ALL SELECT 'Jul',7, project_class, period_07dollars FROM {TABLE_REF} WHERE {_PC_FILTER}
+                UNION ALL SELECT 'Aug',8, project_class, period_08dollars FROM {TABLE_REF} WHERE {_PC_FILTER}
+                UNION ALL SELECT 'Sep',9, project_class, period_09dollars FROM {TABLE_REF} WHERE {_PC_FILTER}
+                UNION ALL SELECT 'Oct',10, project_class, period_10dollars FROM {TABLE_REF} WHERE {_PC_FILTER}
+                UNION ALL SELECT 'Nov',11, project_class, period_11dollars FROM {TABLE_REF} WHERE {_PC_FILTER}
+                UNION ALL SELECT 'Dec',12, project_class, period_12dollars FROM {TABLE_REF} WHERE {_PC_FILTER}
+            )
         )
-        GROUP BY month, Project_Class ORDER BY MIN(m_ord)
+        GROUP BY month, project_class ORDER BY MIN(m_ord)
     """,
 
     "monthly_fte": f"""
         SELECT month, SUM(FTP) AS FTP, SUM(Dollars) AS Dollars
         FROM (
-            SELECT 'Jan' AS month,1 AS m_ord, Period_01_FTP AS FTP, Period_01_Dollars AS Dollars FROM {TABLE_REF}
-            UNION ALL SELECT 'Feb',2,Period_02_FTP,Period_02_Dollars FROM {TABLE_REF}
-            UNION ALL SELECT 'Mar',3,Period_03_FTP,Period_03_Dollars FROM {TABLE_REF}
-            UNION ALL SELECT 'Apr',4,Period_04_FTP,Period_04_Dollars FROM {TABLE_REF}
-            UNION ALL SELECT 'May',5,Period_05_FTP,Period_05_Dollars FROM {TABLE_REF}
-            UNION ALL SELECT 'Jun',6,Period_06_FTP,Period_06_Dollars FROM {TABLE_REF}
-            UNION ALL SELECT 'Jul',7,Period_07_FTP,Period_07_Dollars FROM {TABLE_REF}
-            UNION ALL SELECT 'Aug',8,Period_08_FTP,Period_08_Dollars FROM {TABLE_REF}
-            UNION ALL SELECT 'Sep',9,Period_09_FTP,Period_09_Dollars FROM {TABLE_REF}
-            UNION ALL SELECT 'Oct',10,Period_10_FTP,Period_10_Dollars FROM {TABLE_REF}
-            UNION ALL SELECT 'Nov',11,Period_11_FTP,Period_11_Dollars FROM {TABLE_REF}
-            UNION ALL SELECT 'Dec',12,Period_12_FTP,Period_12_Dollars FROM {TABLE_REF}
+            SELECT 'Jan' AS month,1 AS m_ord, period_01ftp AS FTP, period_01dollars AS Dollars FROM {TABLE_REF}
+            UNION ALL SELECT 'Feb',2,period_02ftp,period_02dollars FROM {TABLE_REF}
+            UNION ALL SELECT 'Mar',3,period_03ftp,period_03dollars FROM {TABLE_REF}
+            UNION ALL SELECT 'Apr',4,period_04ftp,period_04dollars FROM {TABLE_REF}
+            UNION ALL SELECT 'May',5,period_05ftp,period_05dollars FROM {TABLE_REF}
+            UNION ALL SELECT 'Jun',6,period_06ftp,period_06dollars FROM {TABLE_REF}
+            UNION ALL SELECT 'Jul',7,period_07ftp,period_07dollars FROM {TABLE_REF}
+            UNION ALL SELECT 'Aug',8,period_08ftp,period_08dollars FROM {TABLE_REF}
+            UNION ALL SELECT 'Sep',9,period_09ftp,period_09dollars FROM {TABLE_REF}
+            UNION ALL SELECT 'Oct',10,period_10ftp,period_10dollars FROM {TABLE_REF}
+            UNION ALL SELECT 'Nov',11,period_11ftp,period_11dollars FROM {TABLE_REF}
+            UNION ALL SELECT 'Dec',12,period_12ftp,period_12dollars FROM {TABLE_REF}
         )
         GROUP BY month ORDER BY MIN(m_ord)
     """,
 
     "hierarchy_table": f"""
         SELECT
-            ResourceVP AS Hierarchy,
-            Resource_Manager AS Leader,
-            COUNT(DISTINCT RACFID_PO) AS HC,
-            ROUND(AVG(FTE_AVERAGE), 1) AS FTE,
+            resourcevp AS Hierarchy,
+            resource_manager AS Leader,
+            COUNT(DISTINCT racfidpo) AS HC,
+            ROUND(AVG(fte_average), 1) AS FTE,
             SUM(eff_spend) AS Spend_to_Date,
-            ROUND(SAFE_DIVIDE(SUM(CASE WHEN Project_Class='Capital' THEN eff_spend ELSE 0 END), NULLIF(SUM(eff_spend),0))*100, 2) AS Capital_Pct,
-            ROUND(SAFE_DIVIDE(SUM(CASE WHEN Project_Class='Expense' THEN eff_spend ELSE 0 END), NULLIF(SUM(eff_spend),0))*100, 2) AS Expense_Pct,
+            ROUND(SAFE_DIVIDE(SUM(CASE WHEN {_PC_IS_CAPITAL} THEN eff_spend ELSE 0 END), NULLIF(SUM(eff_spend),0))*100, 2) AS Capital_Pct,
+            ROUND(SAFE_DIVIDE(SUM(CASE WHEN {_PC_IS_EXPENSE} THEN eff_spend ELSE 0 END), NULLIF(SUM(eff_spend),0))*100, 2) AS Expense_Pct,
             SUM(eff_spend) AS Committed_Spend
         FROM (
             SELECT *,
-                COALESCE(NULLIF(YTD_Spend,0),
-                    COALESCE(Period_01_Dollars,0)+COALESCE(Period_02_Dollars,0)+COALESCE(Period_03_Dollars,0)+
-                    COALESCE(Period_04_Dollars,0)+COALESCE(Period_05_Dollars,0)+COALESCE(Period_06_Dollars,0)+
-                    COALESCE(Period_07_Dollars,0)+COALESCE(Period_08_Dollars,0)+COALESCE(Period_09_Dollars,0)+
-                    COALESCE(Period_10_Dollars,0)+COALESCE(Period_11_Dollars,0)+COALESCE(Period_12_Dollars,0)) AS eff_spend
+                COALESCE(NULLIF(ytd_spend,0),
+                    COALESCE(period_01dollars,0)+COALESCE(period_02dollars,0)+COALESCE(period_03dollars,0)+
+                    COALESCE(period_04dollars,0)+COALESCE(period_05dollars,0)+COALESCE(period_06dollars,0)+
+                    COALESCE(period_07dollars,0)+COALESCE(period_08dollars,0)+COALESCE(period_09dollars,0)+
+                    COALESCE(period_10dollars,0)+COALESCE(period_11dollars,0)+COALESCE(period_12dollars,0)) AS eff_spend
             FROM {TABLE_REF}
-            WHERE ResourceVP IS NOT NULL
+            WHERE resourcevp IS NOT NULL
         )
-        GROUP BY ResourceVP, Resource_Manager
+        GROUP BY resourcevp, resource_manager
         ORDER BY Spend_to_Date DESC
     """,
 
     "capital_expense_donut": f"""
-        SELECT Project_Class AS type, SUM(YTD_Spend) AS amount
+        SELECT {_PC_LABEL} AS type, SUM(ytd_spend) AS amount
         FROM {TABLE_REF}
-        WHERE Project_Class IN ('Capital','Expense')
-        GROUP BY Project_Class
+        WHERE {_PC_FILTER}
+        GROUP BY 1
     """,
 
     "monthly_cap_exp_ftp": f"""
         SELECT month,
-            SUM(CASE WHEN Project_Class='Capital' THEN Dollars ELSE 0 END) AS Capital,
-            SUM(CASE WHEN Project_Class='Expense' THEN Dollars ELSE 0 END) AS Expense,
+            SUM(CASE WHEN {_PC_IS_CAPITAL} THEN Dollars ELSE 0 END) AS Capital,
+            SUM(CASE WHEN {_PC_IS_EXPENSE} THEN Dollars ELSE 0 END) AS Expense,
             SUM(FTP) AS FTP
         FROM (
-            SELECT 'Jan' AS month,1 AS m_ord,Project_Class,Period_01_Dollars AS Dollars,Period_01_FTP AS FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'Feb',2,Project_Class,Period_02_Dollars,Period_02_FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'Mar',3,Project_Class,Period_03_Dollars,Period_03_FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'Apr',4,Project_Class,Period_04_Dollars,Period_04_FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'May',5,Project_Class,Period_05_Dollars,Period_05_FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'Jun',6,Project_Class,Period_06_Dollars,Period_06_FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'Jul',7,Project_Class,Period_07_Dollars,Period_07_FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'Aug',8,Project_Class,Period_08_Dollars,Period_08_FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'Sep',9,Project_Class,Period_09_Dollars,Period_09_FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'Oct',10,Project_Class,Period_10_Dollars,Period_10_FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'Nov',11,Project_Class,Period_11_Dollars,Period_11_FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'Dec',12,Project_Class,Period_12_Dollars,Period_12_FTP FROM {TABLE_REF}
+            SELECT 'Jan' AS month,1 AS m_ord,project_class,period_01dollars AS Dollars,period_01ftp AS FTP FROM {TABLE_REF}
+            UNION ALL SELECT 'Feb',2,project_class,period_02dollars,period_02ftp FROM {TABLE_REF}
+            UNION ALL SELECT 'Mar',3,project_class,period_03dollars,period_03ftp FROM {TABLE_REF}
+            UNION ALL SELECT 'Apr',4,project_class,period_04dollars,period_04ftp FROM {TABLE_REF}
+            UNION ALL SELECT 'May',5,project_class,period_05dollars,period_05ftp FROM {TABLE_REF}
+            UNION ALL SELECT 'Jun',6,project_class,period_06dollars,period_06ftp FROM {TABLE_REF}
+            UNION ALL SELECT 'Jul',7,project_class,period_07dollars,period_07ftp FROM {TABLE_REF}
+            UNION ALL SELECT 'Aug',8,project_class,period_08dollars,period_08ftp FROM {TABLE_REF}
+            UNION ALL SELECT 'Sep',9,project_class,period_09dollars,period_09ftp FROM {TABLE_REF}
+            UNION ALL SELECT 'Oct',10,project_class,period_10dollars,period_10ftp FROM {TABLE_REF}
+            UNION ALL SELECT 'Nov',11,project_class,period_11dollars,period_11ftp FROM {TABLE_REF}
+            UNION ALL SELECT 'Dec',12,project_class,period_12dollars,period_12ftp FROM {TABLE_REF}
         )
         GROUP BY month ORDER BY MIN(m_ord)
     """,
@@ -184,74 +193,76 @@ FTE_SCORECARD_QUERIES = {
 VENDOR_SCORECARD_QUERIES = {
     "vendor_table": f"""
         SELECT
-            Vendor,
-            ROUND(SUM(Period_01_FTP+Period_02_FTP+Period_03_FTP+Period_04_FTP+Period_05_FTP+Period_06_FTP+Period_07_FTP+Period_08_FTP+Period_09_FTP+Period_10_FTP+Period_11_FTP+Period_12_FTP), 1) AS FTP,
-            ROUND(SAFE_DIVIDE(SUM(CASE WHEN FOB='Offshore' THEN FTE_AVERAGE ELSE 0 END), NULLIF(SUM(FTE_AVERAGE),0))*100, 1) AS Offshore_Pct,
-            ROUND(SAFE_DIVIDE(SUM(CASE WHEN FOB='Onshore' THEN FTE_AVERAGE ELSE 0 END), NULLIF(SUM(FTE_AVERAGE),0))*100, 1) AS Onshore_Pct,
-            SUM(YTD_Spend) AS Spend_to_Date,
-            ROUND(SAFE_DIVIDE(SUM(CASE WHEN BillType='TM' THEN YTD_Spend ELSE 0 END), NULLIF(SUM(YTD_Spend),0))*100, 2) AS TM_Pct,
-            ROUND(SAFE_DIVIDE(SUM(CASE WHEN BillType='Fixed Fee' THEN YTD_Spend ELSE 0 END), NULLIF(SUM(YTD_Spend),0))*100, 2) AS Fixed_Fee_Pct,
-            ROUND(SAFE_DIVIDE(SUM(CASE WHEN Project_Class='Capital' THEN YTD_Spend ELSE 0 END), NULLIF(SUM(YTD_Spend),0))*100, 2) AS Capital_Pct,
-            ROUND(SAFE_DIVIDE(SUM(CASE WHEN Project_Class='Expense' THEN YTD_Spend ELSE 0 END), NULLIF(SUM(YTD_Spend),0))*100, 2) AS Expense_Pct,
-            SUM(YTD_Spend) AS Committed_Spend
+            vendor,
+            ROUND(SUM(period_01ftp+period_02ftp+period_03ftp+period_04ftp+period_05ftp+period_06ftp+period_07ftp+period_08ftp+period_09ftp+period_10ftp+period_11ftp+period_12ftp), 1) AS FTP,
+            0 AS Offshore_Pct,
+            0 AS Onshore_Pct,
+            SUM(ytd_spend) AS Spend_to_Date,
+            ROUND(SAFE_DIVIDE(SUM(CASE WHEN billtype='TM' THEN ytd_spend ELSE 0 END), NULLIF(SUM(ytd_spend),0))*100, 2) AS TM_Pct,
+            ROUND(SAFE_DIVIDE(SUM(CASE WHEN billtype='Fixed Fee' THEN ytd_spend ELSE 0 END), NULLIF(SUM(ytd_spend),0))*100, 2) AS Fixed_Fee_Pct,
+            ROUND(SAFE_DIVIDE(SUM(CASE WHEN {_PC_IS_CAPITAL} THEN ytd_spend ELSE 0 END), NULLIF(SUM(ytd_spend),0))*100, 2) AS Capital_Pct,
+            ROUND(SAFE_DIVIDE(SUM(CASE WHEN {_PC_IS_EXPENSE} THEN ytd_spend ELSE 0 END), NULLIF(SUM(ytd_spend),0))*100, 2) AS Expense_Pct,
+            SUM(ytd_spend) AS Committed_Spend
         FROM {TABLE_REF}
-        WHERE Vendor IS NOT NULL AND Vendor != ''
-        GROUP BY Vendor
+        WHERE vendor IS NOT NULL AND vendor != ''
+        GROUP BY vendor
         ORDER BY Spend_to_Date DESC
     """,
 
     "offshore_onshore_bar": f"""
-        SELECT FOB, ROUND(SUM(FTE_AVERAGE),1) AS FTE
+        SELECT fob, ROUND(SUM(fte_average),1) AS FTE
         FROM {TABLE_REF}
-        WHERE FOB IN ('Offshore','Onshore')
-        GROUP BY FOB
+        WHERE fob IS NOT NULL AND TRIM(fob) NOT IN ('', '0')
+        GROUP BY fob
+        ORDER BY FTE DESC
+        LIMIT 10
     """,
 
     "billtype_bar": f"""
-        SELECT BillType, SUM(YTD_Spend) AS Spend
+        SELECT billtype, SUM(ytd_spend) AS Spend
         FROM {TABLE_REF}
-        WHERE BillType IN ('TM','Fixed Fee')
-        GROUP BY BillType
+        WHERE billtype IN ('TM','Fixed Fee')
+        GROUP BY billtype
     """,
 
     "monthly_vendor_spend": f"""
-        SELECT month, BillType, SUM(Dollars) AS Dollars
+        SELECT month, billtype, SUM(Dollars) AS Dollars
         FROM (
-            SELECT 'Jan' AS month,1 AS m_ord, BillType, Period_01_Dollars AS Dollars FROM {TABLE_REF} WHERE BillType IN ('TM','Fixed Fee')
-            UNION ALL SELECT 'Feb',2,BillType,Period_02_Dollars FROM {TABLE_REF} WHERE BillType IN ('TM','Fixed Fee')
-            UNION ALL SELECT 'Mar',3,BillType,Period_03_Dollars FROM {TABLE_REF} WHERE BillType IN ('TM','Fixed Fee')
-            UNION ALL SELECT 'Apr',4,BillType,Period_04_Dollars FROM {TABLE_REF} WHERE BillType IN ('TM','Fixed Fee')
-            UNION ALL SELECT 'May',5,BillType,Period_05_Dollars FROM {TABLE_REF} WHERE BillType IN ('TM','Fixed Fee')
-            UNION ALL SELECT 'Jun',6,BillType,Period_06_Dollars FROM {TABLE_REF} WHERE BillType IN ('TM','Fixed Fee')
-            UNION ALL SELECT 'Jul',7,BillType,Period_07_Dollars FROM {TABLE_REF} WHERE BillType IN ('TM','Fixed Fee')
-            UNION ALL SELECT 'Aug',8,BillType,Period_08_Dollars FROM {TABLE_REF} WHERE BillType IN ('TM','Fixed Fee')
-            UNION ALL SELECT 'Sep',9,BillType,Period_09_Dollars FROM {TABLE_REF} WHERE BillType IN ('TM','Fixed Fee')
-            UNION ALL SELECT 'Oct',10,BillType,Period_10_Dollars FROM {TABLE_REF} WHERE BillType IN ('TM','Fixed Fee')
-            UNION ALL SELECT 'Nov',11,BillType,Period_11_Dollars FROM {TABLE_REF} WHERE BillType IN ('TM','Fixed Fee')
-            UNION ALL SELECT 'Dec',12,BillType,Period_12_Dollars FROM {TABLE_REF} WHERE BillType IN ('TM','Fixed Fee')
+            SELECT 'Jan' AS month,1 AS m_ord, billtype, period_01dollars AS Dollars FROM {TABLE_REF} WHERE billtype IN ('TM','Fixed Fee')
+            UNION ALL SELECT 'Feb',2,billtype,period_02dollars FROM {TABLE_REF} WHERE billtype IN ('TM','Fixed Fee')
+            UNION ALL SELECT 'Mar',3,billtype,period_03dollars FROM {TABLE_REF} WHERE billtype IN ('TM','Fixed Fee')
+            UNION ALL SELECT 'Apr',4,billtype,period_04dollars FROM {TABLE_REF} WHERE billtype IN ('TM','Fixed Fee')
+            UNION ALL SELECT 'May',5,billtype,period_05dollars FROM {TABLE_REF} WHERE billtype IN ('TM','Fixed Fee')
+            UNION ALL SELECT 'Jun',6,billtype,period_06dollars FROM {TABLE_REF} WHERE billtype IN ('TM','Fixed Fee')
+            UNION ALL SELECT 'Jul',7,billtype,period_07dollars FROM {TABLE_REF} WHERE billtype IN ('TM','Fixed Fee')
+            UNION ALL SELECT 'Aug',8,billtype,period_08dollars FROM {TABLE_REF} WHERE billtype IN ('TM','Fixed Fee')
+            UNION ALL SELECT 'Sep',9,billtype,period_09dollars FROM {TABLE_REF} WHERE billtype IN ('TM','Fixed Fee')
+            UNION ALL SELECT 'Oct',10,billtype,period_10dollars FROM {TABLE_REF} WHERE billtype IN ('TM','Fixed Fee')
+            UNION ALL SELECT 'Nov',11,billtype,period_11dollars FROM {TABLE_REF} WHERE billtype IN ('TM','Fixed Fee')
+            UNION ALL SELECT 'Dec',12,billtype,period_12dollars FROM {TABLE_REF} WHERE billtype IN ('TM','Fixed Fee')
         )
-        GROUP BY month, BillType ORDER BY MIN(m_ord)
+        GROUP BY month, billtype ORDER BY MIN(m_ord)
     """,
 
     "spend_by_tier_monthly": f"""
-        SELECT month, Resource_Category, Dollars
+        SELECT month, resource_category, Dollars
         FROM (
-            SELECT month, Resource_Category, SUM(Dollars) AS Dollars, MIN(m_ord) AS _sort
+            SELECT month, resource_category, SUM(Dollars) AS Dollars, MIN(m_ord) AS _sort
             FROM (
-                SELECT 'Jan' AS month,1 AS m_ord,Resource_Category,Period_01_Dollars AS Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'Feb',2,Resource_Category,Period_02_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'Mar',3,Resource_Category,Period_03_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'Apr',4,Resource_Category,Period_04_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'May',5,Resource_Category,Period_05_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'Jun',6,Resource_Category,Period_06_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'Jul',7,Resource_Category,Period_07_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'Aug',8,Resource_Category,Period_08_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'Sep',9,Resource_Category,Period_09_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'Oct',10,Resource_Category,Period_10_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'Nov',11,Resource_Category,Period_11_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'Dec',12,Resource_Category,Period_12_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
+                SELECT 'Jan' AS month,1 AS m_ord,resource_category,period_01dollars AS Dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'Feb',2,resource_category,period_02dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'Mar',3,resource_category,period_03dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'Apr',4,resource_category,period_04dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'May',5,resource_category,period_05dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'Jun',6,resource_category,period_06dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'Jul',7,resource_category,period_07dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'Aug',8,resource_category,period_08dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'Sep',9,resource_category,period_09dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'Oct',10,resource_category,period_10dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'Nov',11,resource_category,period_11dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'Dec',12,resource_category,period_12dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
             )
-            GROUP BY month, Resource_Category
+            GROUP BY month, resource_category
         )
         WHERE Dollars > 0
         ORDER BY _sort
@@ -259,60 +270,60 @@ VENDOR_SCORECARD_QUERIES = {
 
     "monthly_cap_exp_ftp": f"""
         SELECT month,
-            SUM(CASE WHEN Project_Class='Capital' THEN Dollars ELSE 0 END) AS Capital,
-            SUM(CASE WHEN Project_Class='Expense' THEN Dollars ELSE 0 END) AS Expense,
+            SUM(CASE WHEN {_PC_IS_CAPITAL} THEN Dollars ELSE 0 END) AS Capital,
+            SUM(CASE WHEN {_PC_IS_EXPENSE} THEN Dollars ELSE 0 END) AS Expense,
             SUM(FTP) AS FTP
         FROM (
-            SELECT 'Jan' AS month,1 AS m_ord,Project_Class,Period_01_Dollars AS Dollars,Period_01_FTP AS FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'Feb',2,Project_Class,Period_02_Dollars,Period_02_FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'Mar',3,Project_Class,Period_03_Dollars,Period_03_FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'Apr',4,Project_Class,Period_04_Dollars,Period_04_FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'May',5,Project_Class,Period_05_Dollars,Period_05_FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'Jun',6,Project_Class,Period_06_Dollars,Period_06_FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'Jul',7,Project_Class,Period_07_Dollars,Period_07_FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'Aug',8,Project_Class,Period_08_Dollars,Period_08_FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'Sep',9,Project_Class,Period_09_Dollars,Period_09_FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'Oct',10,Project_Class,Period_10_Dollars,Period_10_FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'Nov',11,Project_Class,Period_11_Dollars,Period_11_FTP FROM {TABLE_REF}
-            UNION ALL SELECT 'Dec',12,Project_Class,Period_12_Dollars,Period_12_FTP FROM {TABLE_REF}
+            SELECT 'Jan' AS month,1 AS m_ord,project_class,period_01dollars AS Dollars,period_01ftp AS FTP FROM {TABLE_REF}
+            UNION ALL SELECT 'Feb',2,project_class,period_02dollars,period_02ftp FROM {TABLE_REF}
+            UNION ALL SELECT 'Mar',3,project_class,period_03dollars,period_03ftp FROM {TABLE_REF}
+            UNION ALL SELECT 'Apr',4,project_class,period_04dollars,period_04ftp FROM {TABLE_REF}
+            UNION ALL SELECT 'May',5,project_class,period_05dollars,period_05ftp FROM {TABLE_REF}
+            UNION ALL SELECT 'Jun',6,project_class,period_06dollars,period_06ftp FROM {TABLE_REF}
+            UNION ALL SELECT 'Jul',7,project_class,period_07dollars,period_07ftp FROM {TABLE_REF}
+            UNION ALL SELECT 'Aug',8,project_class,period_08dollars,period_08ftp FROM {TABLE_REF}
+            UNION ALL SELECT 'Sep',9,project_class,period_09dollars,period_09ftp FROM {TABLE_REF}
+            UNION ALL SELECT 'Oct',10,project_class,period_10dollars,period_10ftp FROM {TABLE_REF}
+            UNION ALL SELECT 'Nov',11,project_class,period_11dollars,period_11ftp FROM {TABLE_REF}
+            UNION ALL SELECT 'Dec',12,project_class,period_12dollars,period_12ftp FROM {TABLE_REF}
         )
         GROUP BY month ORDER BY MIN(m_ord)
     """,
 
     "vendor_kpis": f"""
         SELECT
-            COUNT(DISTINCT Vendor)    AS Total_Vendors,
-            COUNT(DISTINCT RACFID_PO) AS Total_Resources,
-            SUM(YTD_Spend)            AS Total_Cost
+            COUNT(DISTINCT vendor)   AS Total_Vendors,
+            COUNT(DISTINCT racfidpo) AS Total_Resources,
+            SUM(ytd_spend)           AS Total_Cost
         FROM {TABLE_REF}
-        WHERE Vendor IS NOT NULL
-          AND LOWER(TRIM(Vendor)) != 'internal'
+        WHERE vendor IS NOT NULL
+          AND LOWER(TRIM(vendor)) != 'internal'
     """,
 
     "vendor_resource_count": f"""
-        SELECT Vendor, COUNT(DISTINCT RACFID_PO) AS Resource_Count
+        SELECT vendor, COUNT(DISTINCT racfidpo) AS Resource_Count
         FROM {TABLE_REF}
-        WHERE Vendor IS NOT NULL
-          AND LOWER(TRIM(Vendor)) != 'internal'
-        GROUP BY Vendor
+        WHERE vendor IS NOT NULL
+          AND LOWER(TRIM(vendor)) != 'internal'
+        GROUP BY vendor
         ORDER BY Resource_Count DESC
         LIMIT 15
     """,
 
     "tier_breakdown": f"""
         SELECT
-            Resource_Category AS Tier,
-            COUNT(DISTINCT RACFID_PO) AS FTP,
-            ROUND(SAFE_DIVIDE(SUM(CASE WHEN FOB='Offshore' THEN FTE_AVERAGE ELSE 0 END), NULLIF(SUM(FTE_AVERAGE),0))*100,1) AS Offshore_Pct,
-            ROUND(SAFE_DIVIDE(SUM(CASE WHEN FOB='Onshore' THEN FTE_AVERAGE ELSE 0 END), NULLIF(SUM(FTE_AVERAGE),0))*100,1) AS Onshore_Pct,
-            ROUND(SAFE_DIVIDE(SUM(CASE WHEN BillType='Fixed Fee' THEN YTD_Spend ELSE 0 END), NULLIF(SUM(YTD_Spend),0))*100,1) AS FixedFee_Pct,
-            ROUND(SAFE_DIVIDE(SUM(CASE WHEN BillType='TM' THEN YTD_Spend ELSE 0 END), NULLIF(SUM(YTD_Spend),0))*100,1) AS TM_Pct,
-            ROUND(SAFE_DIVIDE(SUM(CASE WHEN Project_Class='Capital' THEN YTD_Spend ELSE 0 END), NULLIF(SUM(YTD_Spend),0))*100,1) AS Capital_Pct,
-            ROUND(SAFE_DIVIDE(SUM(CASE WHEN Project_Class='Expense' THEN YTD_Spend ELSE 0 END), NULLIF(SUM(YTD_Spend),0))*100,1) AS Expense_Pct,
-            SUM(YTD_Spend) AS Spend_to_Date
+            resource_category AS Tier,
+            COUNT(DISTINCT racfidpo) AS FTP,
+            0 AS Offshore_Pct,
+            0 AS Onshore_Pct,
+            ROUND(SAFE_DIVIDE(SUM(CASE WHEN billtype='Fixed Fee' THEN ytd_spend ELSE 0 END), NULLIF(SUM(ytd_spend),0))*100,1) AS FixedFee_Pct,
+            ROUND(SAFE_DIVIDE(SUM(CASE WHEN billtype='TM' THEN ytd_spend ELSE 0 END), NULLIF(SUM(ytd_spend),0))*100,1) AS TM_Pct,
+            ROUND(SAFE_DIVIDE(SUM(CASE WHEN {_PC_IS_CAPITAL} THEN ytd_spend ELSE 0 END), NULLIF(SUM(ytd_spend),0))*100,1) AS Capital_Pct,
+            ROUND(SAFE_DIVIDE(SUM(CASE WHEN {_PC_IS_EXPENSE} THEN ytd_spend ELSE 0 END), NULLIF(SUM(ytd_spend),0))*100,1) AS Expense_Pct,
+            SUM(ytd_spend) AS Spend_to_Date
         FROM {TABLE_REF}
-        WHERE Resource_Category IS NOT NULL
-        GROUP BY Resource_Category
+        WHERE resource_category IS NOT NULL
+        GROUP BY resource_category
         ORDER BY Spend_to_Date DESC
     """,
 }
@@ -326,50 +337,50 @@ SHARED_QUERIES = {
 HIERARCHY_SCORECARD_QUERIES = {
     "hierarchy_drill": f"""
         SELECT
-            ResourceVP,
-            Vendor,
-            Resource_Manager AS Leader,
-            COUNT(DISTINCT RACFID_PO) AS FTP,
-            ROUND(SAFE_DIVIDE(SUM(CASE WHEN FOB='Offshore' THEN FTE_AVERAGE ELSE 0 END), NULLIF(SUM(FTE_AVERAGE),0))*100,1) AS Offshore_Pct,
-            ROUND(SAFE_DIVIDE(SUM(CASE WHEN FOB='Onshore' THEN FTE_AVERAGE ELSE 0 END), NULLIF(SUM(FTE_AVERAGE),0))*100,1) AS Onshore_Pct,
+            resourcevp,
+            vendor,
+            resource_manager AS Leader,
+            COUNT(DISTINCT racfidpo) AS FTP,
+            0 AS Offshore_Pct,
+            0 AS Onshore_Pct,
             SUM(eff_spend) AS Spend_to_Date,
-            ROUND(SAFE_DIVIDE(SUM(CASE WHEN BillType='TM' THEN eff_spend ELSE 0 END), NULLIF(SUM(eff_spend),0))*100,2) AS TM_Pct,
-            ROUND(SAFE_DIVIDE(SUM(CASE WHEN BillType='Fixed Fee' THEN eff_spend ELSE 0 END), NULLIF(SUM(eff_spend),0))*100,2) AS Fixed_Fee_Pct,
-            ROUND(SAFE_DIVIDE(SUM(CASE WHEN Project_Class='Capital' THEN eff_spend ELSE 0 END), NULLIF(SUM(eff_spend),0))*100,2) AS Capital_Pct,
-            ROUND(SAFE_DIVIDE(SUM(CASE WHEN Project_Class='Expense' THEN eff_spend ELSE 0 END), NULLIF(SUM(eff_spend),0))*100,2) AS Expense_Pct
+            ROUND(SAFE_DIVIDE(SUM(CASE WHEN billtype='TM' THEN eff_spend ELSE 0 END), NULLIF(SUM(eff_spend),0))*100,2) AS TM_Pct,
+            ROUND(SAFE_DIVIDE(SUM(CASE WHEN billtype='Fixed Fee' THEN eff_spend ELSE 0 END), NULLIF(SUM(eff_spend),0))*100,2) AS Fixed_Fee_Pct,
+            ROUND(SAFE_DIVIDE(SUM(CASE WHEN {_PC_IS_CAPITAL} THEN eff_spend ELSE 0 END), NULLIF(SUM(eff_spend),0))*100,2) AS Capital_Pct,
+            ROUND(SAFE_DIVIDE(SUM(CASE WHEN {_PC_IS_EXPENSE} THEN eff_spend ELSE 0 END), NULLIF(SUM(eff_spend),0))*100,2) AS Expense_Pct
         FROM (
             SELECT *,
-                COALESCE(NULLIF(YTD_Spend,0),
-                    COALESCE(Period_01_Dollars,0)+COALESCE(Period_02_Dollars,0)+COALESCE(Period_03_Dollars,0)+
-                    COALESCE(Period_04_Dollars,0)+COALESCE(Period_05_Dollars,0)+COALESCE(Period_06_Dollars,0)+
-                    COALESCE(Period_07_Dollars,0)+COALESCE(Period_08_Dollars,0)+COALESCE(Period_09_Dollars,0)+
-                    COALESCE(Period_10_Dollars,0)+COALESCE(Period_11_Dollars,0)+COALESCE(Period_12_Dollars,0)) AS eff_spend
+                COALESCE(NULLIF(ytd_spend,0),
+                    COALESCE(period_01dollars,0)+COALESCE(period_02dollars,0)+COALESCE(period_03dollars,0)+
+                    COALESCE(period_04dollars,0)+COALESCE(period_05dollars,0)+COALESCE(period_06dollars,0)+
+                    COALESCE(period_07dollars,0)+COALESCE(period_08dollars,0)+COALESCE(period_09dollars,0)+
+                    COALESCE(period_10dollars,0)+COALESCE(period_11dollars,0)+COALESCE(period_12dollars,0)) AS eff_spend
             FROM {TABLE_REF}
-            WHERE ResourceVP IS NOT NULL
+            WHERE resourcevp IS NOT NULL
         )
-        GROUP BY ResourceVP, Vendor, Resource_Manager
-        ORDER BY ResourceVP, Spend_to_Date DESC
+        GROUP BY resourcevp, vendor, resource_manager
+        ORDER BY resourcevp, Spend_to_Date DESC
     """,
 
     "spend_by_tier_monthly": f"""
-        SELECT month, Resource_Category, Dollars
+        SELECT month, resource_category, Dollars
         FROM (
-            SELECT month, Resource_Category, SUM(Dollars) AS Dollars, MIN(m_ord) AS _sort
+            SELECT month, resource_category, SUM(Dollars) AS Dollars, MIN(m_ord) AS _sort
             FROM (
-                SELECT 'Jan' AS month,1 AS m_ord,Resource_Category,Period_01_Dollars AS Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'Feb',2,Resource_Category,Period_02_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'Mar',3,Resource_Category,Period_03_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'Apr',4,Resource_Category,Period_04_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'May',5,Resource_Category,Period_05_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'Jun',6,Resource_Category,Period_06_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'Jul',7,Resource_Category,Period_07_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'Aug',8,Resource_Category,Period_08_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'Sep',9,Resource_Category,Period_09_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'Oct',10,Resource_Category,Period_10_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'Nov',11,Resource_Category,Period_11_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
-                UNION ALL SELECT 'Dec',12,Resource_Category,Period_12_Dollars FROM {TABLE_REF} WHERE Resource_Category IS NOT NULL
+                SELECT 'Jan' AS month,1 AS m_ord,resource_category,period_01dollars AS Dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'Feb',2,resource_category,period_02dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'Mar',3,resource_category,period_03dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'Apr',4,resource_category,period_04dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'May',5,resource_category,period_05dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'Jun',6,resource_category,period_06dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'Jul',7,resource_category,period_07dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'Aug',8,resource_category,period_08dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'Sep',9,resource_category,period_09dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'Oct',10,resource_category,period_10dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'Nov',11,resource_category,period_11dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
+                UNION ALL SELECT 'Dec',12,resource_category,period_12dollars FROM {TABLE_REF} WHERE resource_category IS NOT NULL
             )
-            GROUP BY month, Resource_Category
+            GROUP BY month, resource_category
         )
         WHERE Dollars > 0
         ORDER BY _sort
