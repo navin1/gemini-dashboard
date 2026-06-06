@@ -1,12 +1,13 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { GoogleOAuthProvider } from '@react-oauth/google'
-import { LayoutDashboard, Users, GitBranch, Sparkles, Star, BookOpen, Plus, X as XIcon, Pencil } from 'lucide-react'
+import { LayoutDashboard, Users, GitBranch, Sparkles, Star, BookOpen, Plus, X as XIcon, Pencil, Target } from 'lucide-react'
 import { Header } from './components/Header/Header'
 import { FTEHierarchyTab } from './tabs/FTEHierarchyTab'
 import { VendorSummaryTab } from './tabs/VendorSummaryTab'
 import { HierarchySummaryTab } from './tabs/HierarchySummaryTab'
 import { AIDashboardTab } from './tabs/AIDashboardTab'
+import { AIAmbitionTab } from './tabs/AIAmbitionTab'
 import { FavoritesTab } from './tabs/FavoritesTab'
 import { GlossaryTab } from './tabs/GlossaryTab'
 import { ChatPanel } from './components/Chat/ChatPanel'
@@ -26,12 +27,13 @@ qc.prefetchQuery({ queryKey: ['scorecard', 'hierarchy'], queryFn: fetchHierarchy
 
 // ── Fixed tabs (always present, not closeable) ────────────────────────────────
 const FIXED_TABS = [
-  { id: 'ai',        label: 'My Dashboard',       icon: Sparkles,        badge: 'Dynamic'   },
-  { id: 'vendor',    label: 'Vendor Summary',     icon: Users,           badge: 'Scorecard' },
-  { id: 'fte',       label: 'FTE Hierarchy',      icon: LayoutDashboard, badge: 'Scorecard' },
-  { id: 'hierarchy', label: 'Hierarchy Summary',  icon: GitBranch,       badge: 'Scorecard' },
-  { id: 'favorites', label: 'Favorites',          icon: Star,            badge: 'Saved'     },
-  { id: 'glossary',  label: 'Glossary',           icon: BookOpen,        badge: 'Reference' },
+  { id: 'ai',          label: 'My Dashboard',      icon: Sparkles,        badge: 'Dynamic'   },
+  { id: 'ai-ambition', label: 'AI Ambition',       icon: Target,          badge: 'Strategy'  },
+  { id: 'vendor',      label: 'Vendor Summary',    icon: Users,           badge: 'Scorecard' },
+  { id: 'fte',         label: 'FTE Hierarchy',     icon: LayoutDashboard, badge: 'Scorecard' },
+  { id: 'hierarchy',   label: 'Hierarchy Summary', icon: GitBranch,       badge: 'Scorecard' },
+  { id: 'favorites',   label: 'Favorites',         icon: Star,            badge: 'Saved'     },
+  { id: 'glossary',    label: 'Glossary',          icon: BookOpen,        badge: 'Reference' },
 ] as const
 
 type FixedTabId = typeof FIXED_TABS[number]['id']
@@ -86,11 +88,12 @@ function registerAddWidget(tabId: string, fn: (w: Widget) => void) {
 // ── Content router ────────────────────────────────────────────────────────────
 function TabContent({ tabId, tabLabel, registerCb }: { tabId: string; tabLabel: string; registerCb: (fn: (w: Widget) => void) => void }) {
   switch (tabId as FixedTabId) {
-    case 'fte':       return <FTEHierarchyTab tabLabel={tabLabel} onRegisterAddWidget={registerCb} />
-    case 'vendor':    return <VendorSummaryTab tabLabel={tabLabel} onRegisterAddWidget={registerCb} />
-    case 'hierarchy': return <HierarchySummaryTab tabLabel={tabLabel} onRegisterAddWidget={registerCb} />
-    case 'favorites': return <FavoritesTab />
-    case 'glossary':  return <GlossaryTab />
+    case 'ai-ambition': return <AIAmbitionTab />
+    case 'fte':         return <FTEHierarchyTab tabLabel={tabLabel} onRegisterAddWidget={registerCb} />
+    case 'vendor':      return <VendorSummaryTab tabLabel={tabLabel} onRegisterAddWidget={registerCb} />
+    case 'hierarchy':   return <HierarchySummaryTab tabLabel={tabLabel} onRegisterAddWidget={registerCb} />
+    case 'favorites':   return <FavoritesTab />
+    case 'glossary':    return <GlossaryTab />
     default:
       return <AIDashboardTab key={tabId} tabId={tabId} tabLabel={tabLabel} onRegisterAddWidget={registerCb} />
   }
